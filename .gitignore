@@ -1,0 +1,43 @@
+# Unity-generated folders
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+/[Mm]emoryCaptures/
+/[Rr]ecordings/
+/.utmp/
+/[Aa]ssets/AssetStoreTools*
+
+# IDE-generated files
+.vs/
+.idea/
+.vscode/
+*.csproj
+*.sln
+*.slnx
+*.suo
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+
+# Build output and local signing credentials
+*.apk
+*.aab
+*.unitypackage
+*.keystore
+*.jks
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Keep Assets (including .meta files), Packages, and ProjectSettings in source control.

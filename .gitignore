@@ -76,3 +76,7 @@ crashlytics-build.properties
 Thumbs.db
 
 # Keep Assets (including .meta files), Packages, and ProjectSettings in source control.
+# Local service credentials
+.env
+.env.local
+.env.*.local

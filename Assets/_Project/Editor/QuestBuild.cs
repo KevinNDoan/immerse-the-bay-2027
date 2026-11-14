@@ -1,5 +1,4 @@
 using System.IO;
-using System.Linq;
 using UnityEditor;
 using UnityEditor.Build;
 using UnityEditor.Build.Reporting;
@@ -19,18 +18,25 @@ namespace ImmerseTheBay.Editor
             if (!Application.isBatchMode && !EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo())
                 return;
 
-            var scenes = EditorBuildSettings.scenes.Where(scene => scene.enabled).Select(scene => scene.path).ToArray();
-            if (scenes.Length == 0)
-                throw new BuildFailedException("Add at least one enabled scene in File > Build Profiles > Scene List.");
+            if (AssetDatabase.LoadAssetAtPath<SceneAsset>(Zap.EditorTools.ZapSceneBuilder.VoidScenePath) == null)
+                Zap.EditorTools.ZapSceneBuilder.BuildVoidScene();
 
             Directory.CreateDirectory("Builds/Quest");
-            var report = BuildPipeline.BuildPlayer(new BuildPlayerOptions
+            Zap.EditorTools.QuestNetworkSetup.ConfigureRelayAddress();
+            var previousHttp = PlayerSettings.insecureHttpOption;
+            PlayerSettings.insecureHttpOption = InsecureHttpOption.DevelopmentOnly;
+            BuildReport report;
+            try
             {
-                scenes = scenes,
-                target = BuildTarget.Android,
-                locationPathName = "Builds/Quest/ImmerseTheBay.apk",
-                options = BuildOptions.Development,
-            });
+                report = BuildPipeline.BuildPlayer(new BuildPlayerOptions
+                {
+                    scenes = new[] { Zap.EditorTools.ZapSceneBuilder.VoidScenePath },
+                    target = BuildTarget.Android,
+                    locationPathName = "Builds/Quest/ImmerseTheBay.apk",
+                    options = BuildOptions.Development,
+                });
+            }
+            finally { PlayerSettings.insecureHttpOption = previousHttp; }
 
             if (report.summary.result != BuildResult.Succeeded)
                 throw new BuildFailedException($"Quest build failed: {report.summary.result} ({report.summary.totalErrors} errors).");

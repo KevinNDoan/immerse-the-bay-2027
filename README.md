@@ -1,17 +1,20 @@
-# Immerse the Bay
+# ZAP! — Immerse the Bay
 
-A Unity **6000.6.9f1** VR starter for **standalone Meta Quest**, based on Unity's official VR template 10.0.0.
+A Unity **6000.6.9f1** study tool for **Meta Quest 3**: speak a topic into a throwable ball, edit it by voice, connect related topics, and enter an Orbis-generated world. GPT-6 Luna creates and edits notes using their parent topics; local speech recognition runs on the laptop relay.
+
+See [voice, controls, setup and verification](docs/voice-worlds.md) for the current implementation. Development is on `zap/build`. The void visuals are a temporary placeholder for the designer's skybox.
 
 ## Open and run
 
 1. In Unity Hub, choose **Add → Add project from disk** and select this folder.
 2. Open it with **6000.6.9f1**.
-3. Open `Assets/_Project/Scenes/Main.unity`.
-4. Press **Play**, focus the **Game** view, and use the XR Interaction Simulator's on-screen controls to simulate the headset and controllers.
+3. Start the relay: `cd relay && .venv/bin/python -m zap_relay` (first-time setup is in the guide above).
+4. Open `Assets/_Project/Scenes/Void.unity`.
+5. Press **Play**, focus the **Game** view, and use the XR Interaction Simulator's on-screen controls to simulate the headset and controllers. The development panel supports typed topics; hold **V** to speak a new topic, or **B** to edit the selected ball.
 
 Press **Tab** to switch between FPS and device control modes. Use **[** for the left controller and **]** for the right controller.
 
-The starter scene contains an XR Origin, controller interactions, locomotion, a teleport floor, and a grabbable cube on a pedestal. Unity's larger reference/demo scene is available at `Assets/Scenes/SampleScene.unity`.
+The app scene contains the controller rig; voice, balls, notes, saving and world playback install themselves at runtime. The original starter remains at `Assets/_Project/Scenes/Main.unity`, and Unity's larger reference/demo is at `Assets/Scenes/SampleScene.unity`.
 
 The simulator is enabled **only in the Editor**. Configure it under **Edit → Project Settings → XR Plug-in Management → XR Interaction Toolkit**. It helps test interactions; performance and real tracking still need testing on a headset. On macOS, use a device build for actual headset testing; [Meta Horizon Link requires Windows](https://developers.meta.com/vr/documentation/unity/unity-deploy-and-test/).
 
@@ -23,7 +26,7 @@ Install these Unity Hub modules for this exact Editor version if setting up anot
 - Android SDK & NDK Tools
 - OpenJDK
 
-Use **Immerse the Bay → Build Quest Development APK** to create `Builds/Quest/ImmerseTheBay.apk`. This builds the enabled scenes in the shared Build Profiles scene list, initially just `Main.unity`.
+Use **Immerse the Bay → Build Quest Development APK** to create `Builds/Quest/ImmerseTheBay.apk`. This builds `Void.unity`. Supply the laptop's LAN address through `ZAP_RELAY_URL` when building from the command line; see the setup guide. The build generates microphone and Internet permissions and permits local HTTP in this development APK.
 
 For deployment:
 
@@ -37,7 +40,7 @@ The development APK uses local debug signing. Before publishing, set your final 
 
 | Location | Purpose |
 | --- | --- |
-| `Assets/_Project/Scenes` | Your game scenes; start with `Main.unity` |
+| `Assets/_Project/Scenes` | App scenes; start with `Void.unity` |
 | `Assets/_Project/Scripts` | Your runtime C# code |
 | `Assets/_Project/Prefabs` | Your reusable objects |
 | `Assets/_Project/Materials`, `Art`, `Audio` | Your content |
@@ -91,7 +94,7 @@ Close the Editor for this project before running:
 
 For XR configuration changes, check **Edit → Project Settings → XR Plug-in Management → Project Validation → Android** before building.
 
-## Setup verification
+## Original starter verification
 
 Verified with Unity 6000.6.9f1: successful project import and script compilation, no missing scripts in `Main.unity`, no Android OpenXR validation errors, and a successful development APK build. The generated APK contains ARM64 native code and the Android VR head-tracking feature. No headset was connected, so on-device tracking, interactions, and performance are not yet verified.
 

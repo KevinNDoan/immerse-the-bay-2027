@@ -1,0 +1,39 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c3721da9a07d043da9844f2b0ad0db09, type: 3}
+  m_Name: ZapTheme
+  m_EditorClassIdentifier: Zap.Core::Zap.Core.ZapTheme
+  voidColor: {r: 0.02745098, g: 0.019607844, b: 0.050980393, a: 1}
+  voidLift: {r: 0.078431375, g: 0.050980393, b: 0.14901961, a: 1}
+  nodeColor: {r: 1, g: 1, b: 1, a: 1}
+  lineColor: {r: 1, g: 1, b: 1, a: 1}
+  textColor: {r: 1, g: 1, b: 1, a: 1}
+  paper: {r: 0.9490196, g: 0.9411765, b: 0.96862745, a: 1}
+  ink: {r: 0.043137256, g: 0.03137255, b: 0.078431375, a: 1}
+  nodeDiameter: 0.11
+  nodeSelectedDiameter: 0.125
+  noteOffsetBelowNode: 0.09
+  noteBoxSize: {x: 0.62, y: 0.35}
+  topicTextSize: 0.38
+  summaryTextSize: 0.24
+  summaryShowDistance: 0.85
+  noteHideDistance: 4
+  lineWidth: 0.0025
+  controlsCardSize: {x: 0.5, y: 0.32}
+  controlsTextSizeMin: 0.22
+  controlsTextSizeMax: 0.35
+  controlsMinDistanceFromFace: 0.6
+  nodeGlow: {fileID: 0}
+  nodeRing: {fileID: 0}
+  lineImage: {fileID: 0}
+  noteBackground: {fileID: 0}
+  font: {fileID: 0}

@@ -24,8 +24,8 @@ namespace Zap.World
             root.AddComponent<WorldStream>();
             root.AddComponent<WorldSession>();
             root.AddComponent<WorldAudio>();
-
-            // ConstellationController owns product input; avoid duplicate debug steering.
+            // Stick, trigger and voice steering inside a world. WorldDebugKeys stays off to avoid duplicate steering.
+            root.AddComponent<WorldControls>();
         }
     }
 }

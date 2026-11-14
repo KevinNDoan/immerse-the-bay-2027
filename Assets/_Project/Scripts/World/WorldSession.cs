@@ -12,6 +12,8 @@ namespace Zap.World
         public event Action<string, uint> OnPrompt;
         public event Action<ErrorMessage> OnError;
         public bool IsEntered { get; private set; }
+        /// <summary>Topic of the world that was last entered.</summary>
+        public string Topic { get; private set; } = "";
 
         private RelayClient _relayClient;
         private DomeView _domeView;
@@ -52,6 +54,7 @@ namespace Zap.World
 
         public void Enter(string nodeId, string topic, string prompt = "", string imageBase64 = "")
         {
+            Topic = topic ?? "";
             IsEntered = true;
             _awaitingEnter = true;
             State = "connecting";

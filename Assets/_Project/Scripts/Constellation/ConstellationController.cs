@@ -8,6 +8,7 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.Networking;
 using UnityEngine.SceneManagement;
+using Zap.Core;
 using Zap.Net;
 using Zap.World;
 
@@ -25,8 +26,9 @@ namespace Zap.Constellation
         private readonly ControllerActions _input = new ControllerActions();
         private VoiceRecorder _voice;
         private WorldSession _world;
+        private WorldControls _worldControls;
         private Transform _left, _right, _content;
-        private Material _material;
+        private Material _material, _lineMaterial;
         private TextMeshPro _hud;
         private TopicBall _voiceTarget, _worldNode, _lineStart;
         private string _voiceAction;
@@ -34,9 +36,7 @@ namespace Zap.Constellation
         private string _typed = "Volcanoes";
         private bool _busy, _recordButton, _trigger, _worldVisible, _pulling, _dirty;
         private Vector3 _pullMidpoint;
-        private float _pullDistance, _lastSave, _lastSteer, _recordStart;
-        private uint _pendingSeq;
-        private string _pendingInstruction;
+        private float _pullDistance, _lastSave, _recordStart;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Install()
@@ -51,7 +51,9 @@ namespace Zap.Constellation
             _content = new GameObject("Stars and connections").transform;
             _content.SetParent(transform, false);
             _material = new Material(Shader.Find("Zap/Solid"));
-            _material.SetColor("_BaseColor", Color.white);
+            _material.SetColor("_BaseColor", ZapTheme.Current.nodeColor);
+            _lineMaterial = new Material(Shader.Find("Zap/Solid"));
+            _lineMaterial.SetColor("_BaseColor", ZapTheme.Current.lineColor);
             _voice = gameObject.AddComponent<VoiceRecorder>();
             _voice.Error += SetStatus;
             var data = NodeStore.Load(_savePath);
@@ -60,11 +62,8 @@ namespace Zap.Constellation
             if (data.edges != null) _edges.AddRange(data.edges.Where(e => e != null));
             RebuildLines();
             while ((_world = FindAnyObjectByType<WorldSession>()) == null) yield return null;
-            _world.OnStatus += WorldStatus;
-            _world.OnError += e => SetStatus(e.detail);
-            _world.OnPrompt += PromptReceived;
-            var stream = _world.GetComponent<WorldStream>();
-            stream.OnFrameDecoded += FrameReceived;
+            _worldControls = _world.GetComponent<WorldControls>();
+            _worldControls.StatusChanged += SetStatus;
             BuildHud();
         }
 
@@ -97,8 +96,7 @@ namespace Zap.Constellation
             if (_input.ExitDown && _world.IsEntered) LeaveWorld();
             if (_input.EnterDown && !_world.IsEntered && Current != null && !_busy) EnterWorld(Current);
             if (_worldVisible && !_world.IsEntered) ShowConstellation();
-            if (_world.IsEntered) UpdateWorldControls();
-            else if (!_busy && !_voice.IsRecording) UpdateConstellationControls();
+            if (!_world.IsEntered && !_busy && !_voice.IsRecording) UpdateConstellationControls();
             if (Time.unscaledTime - _lastSave > 3) Save();
             UpdateHud();
             UpdateLines();
@@ -152,7 +150,7 @@ namespace Zap.Constellation
             _busy = true;
             if (action == "steer")
             {
-                if (_world.IsEntered) SendSteer("voice", text);
+                if (_world.IsEntered) _worldControls.Send("voice", text);
                 else SetStatus("You left that world. Hold A to speak again.");
                 _busy = false;
                 yield break;
@@ -190,7 +188,7 @@ namespace Zap.Constellation
                     Save();
                     SetStatus(action == "edit" ? "Updated " + data.topic : data.topic + " is ready. Grip to grab; release to throw.");
                     if (action == "edit" && _world.IsEntered && target == _worldNode)
-                        SendSteer("scene", NodeContext.WorldPrompt(data, _balls.Select(b => b.Data)));
+                        _worldControls.Send("scene", NodeContext.WorldPrompt(data, _balls.Select(b => b.Data)));
                 }
             }
             _busy = false;
@@ -242,39 +240,8 @@ namespace Zap.Constellation
 
         private void ShowConstellation()
         {
-            _worldVisible = false; _pendingInstruction = null;
+            _worldVisible = false;
             _content.gameObject.SetActive(true);
-        }
-
-        private void UpdateWorldControls()
-        {
-            if (_world.State != "streaming" || Time.unscaledTime - _lastSteer < 1.8f) return;
-            if (_input.EventDown) SendSteer("event", "Show an interesting change that teaches something about " + _worldNode.Data.topic);
-            else if (_input.Look.sqrMagnitude > .35f)
-                SendSteer("look", Mathf.Abs(_input.Look.x) > Mathf.Abs(_input.Look.y)
-                    ? (_input.Look.x > 0 ? "slowly pan right" : "slowly pan left") : (_input.Look.y > 0 ? "slowly look up" : "slowly look down"));
-            else if (_input.Move.sqrMagnitude > .35f)
-                SendSteer("move", Mathf.Abs(_input.Move.y) > Mathf.Abs(_input.Move.x)
-                    ? (_input.Move.y > 0 ? "slowly move forward" : "slowly move backward") : (_input.Move.x > 0 ? "slowly move right" : "slowly move left"));
-        }
-
-        private void SendSteer(string kind, string text)
-        {
-            _lastSteer = Time.unscaledTime; _pendingSeq = uint.MaxValue; _pendingInstruction = text;
-            SetStatus("Sending: " + text);
-            _world.Steer(kind, text);
-        }
-        private void PromptReceived(string text, uint sequence) { if (_pendingInstruction != null) _pendingSeq = sequence; }
-        private void FrameReceived(uint sequence)
-        {
-            if (_pendingInstruction != null && sequence >= _pendingSeq)
-            { SetStatus("World updated: " + _pendingInstruction); _pendingInstruction = null; }
-        }
-        private void WorldStatus(StatusMessage status)
-        {
-            if (status.state == "error") SetStatus(status.detail);
-            else if (status.state == "streaming") SetStatus("Explore with the sticks. Hold A to speak. Y returns to your constellation.");
-            else if (!string.IsNullOrEmpty(status.detail)) SetStatus(status.detail);
         }
 
         private void UpdateConstellationControls()
@@ -331,16 +298,20 @@ namespace Zap.Constellation
             {
                 var obj = new GameObject("Connection"); obj.transform.SetParent(_content, false);
                 var line = obj.AddComponent<LineRenderer>();
-                line.sharedMaterial = _material; line.positionCount = 2; line.widthMultiplier = .0025f;
+                line.sharedMaterial = _lineMaterial; line.positionCount = 2;
                 _lines.Add(line);
             }
         }
         private void UpdateLines()
         {
+            var theme = ZapTheme.Current;
+            _material.SetColor("_BaseColor", theme.nodeColor);
+            _lineMaterial.SetColor("_BaseColor", theme.lineColor);
             for (int i = 0; i < _edges.Count; i++)
             {
                 var from = _balls.FirstOrDefault(b => b.Data.id == _edges[i].from);
                 var to = _balls.FirstOrDefault(b => b.Data.id == _edges[i].to);
+                _lines[i].widthMultiplier = theme.lineWidth;
                 _lines[i].enabled = from && to;
                 if (from && to) { _lines[i].SetPosition(0, from.transform.position); _lines[i].SetPosition(1, to.transform.position); }
             }
@@ -354,21 +325,26 @@ namespace Zap.Constellation
         private void BuildHud()
         {
             var obj = new GameObject("ZAP controls"); obj.transform.SetParent(transform, false);
-            _hud = obj.AddComponent<TextMeshPro>(); _hud.fontSize = .35f; _hud.richText = false;
-            _hud.enableAutoSizing = true; _hud.fontSizeMin = .22f; _hud.fontSizeMax = .35f;
+            _hud = obj.AddComponent<TextMeshPro>(); _hud.richText = false;
+            _hud.enableAutoSizing = true;
             _hud.overflowMode = TextOverflowModes.Ellipsis;
-            _hud.rectTransform.sizeDelta = new Vector2(.5f, .32f);
             if (Camera.main) obj.transform.position = Camera.main.transform.position + Camera.main.transform.forward * 1.1f + Vector3.down * .25f;
         }
         private void UpdateHud()
         {
             if (_hud == null || Camera.main == null) return;
+            var theme = ZapTheme.Current;
+            _hud.rectTransform.sizeDelta = theme.controlsCardSize;
+            _hud.fontSizeMin = theme.controlsTextSizeMin;
+            _hud.fontSizeMax = theme.controlsTextSizeMax;
+            _hud.color = theme.textColor;
+            if (theme.font != null) _hud.font = theme.font;
             if (_left != null)
             {
                 Vector3 offset = _left.position + Vector3.up * .13f + _left.forward * .18f - Camera.main.transform.position;
                 // Keep the wrist card readable when the controller comes near the face.
                 if (offset.sqrMagnitude < .01f) offset = Camera.main.transform.forward;
-                _hud.transform.position = Camera.main.transform.position + offset.normalized * Mathf.Max(.6f, offset.magnitude);
+                _hud.transform.position = Camera.main.transform.position + offset.normalized * Mathf.Max(theme.controlsMinDistanceFromFace, offset.magnitude);
             }
             _hud.transform.rotation = Quaternion.LookRotation(_hud.transform.position - Camera.main.transform.position);
             string title = _worldVisible ? _worldNode?.Data.topic : (Current != null ? Current.Data.topic : "ZAP!");
@@ -394,7 +370,12 @@ namespace Zap.Constellation
         }
         private void OnApplicationPause(bool paused) { if (paused) { if (_world != null && _world.IsEntered) LeaveWorld(); Save(); } }
         private void OnApplicationQuit() { Save(); }
-        private void OnDestroy() { if (_material) Destroy(_material); }
+        private void OnDestroy()
+        {
+            if (_worldControls != null) _worldControls.StatusChanged -= SetStatus;
+            if (_material) Destroy(_material);
+            if (_lineMaterial) Destroy(_lineMaterial);
+        }
 
         private void OnGUI()
         {

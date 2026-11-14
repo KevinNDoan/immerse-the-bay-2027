@@ -42,6 +42,7 @@
     let startedDemo = false;
 
     function connect() {
+      startedDemo = false;
       const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
       socket = new WebSocket(`${scheme}://${location.host}/ws/world`);
       socket.addEventListener('message', event => {

@@ -58,7 +58,9 @@ These are the real danger. Each one holds work from more than one lane today.
 
 ## Step 0: pull those files apart before anyone branches
 
-The core developer does this first, on `main`, and tells the others when it is merged. It should take one to two hours. Details are in [core.md](core.md).
+**Status, 2026-11-14:** built and checked on the branch `core/step0`. It is not merged into `main` yet. Do not branch until it is.
+
+The core developer does this first and tells the others when it is merged. Details are in [core.md](core.md).
 
 1. **Look values move into one theme.** Every size, spacing, colour and text size now written in `TopicBall.cs`, `ConstellationController.cs` and `ZapColors.cs` moves into a single theme asset in `Assets/_Project/Art/Theme/`. The designer then changes the look by editing that asset, never the code.
 2. **In-world controls move to the world lane.** Stick and trigger steering moves out of `ConstellationController.cs` into `Assets/_Project/Scripts/World/WorldControls.cs`. `ControllerActions.cs` moves to `Scripts/Core/` so both lanes can read the controller.
@@ -105,6 +107,19 @@ git checkout -- "Assets/Settings/Project Configuration/UniversalRenderPipelineGl
 - Turn off any editor feature that commits and pushes on its own.
 - One Unity Editor open per copy of the project.
 
+## Testing in the Unity Editor on your own laptop
+
+Two things in the project are set for the demo laptop and stop the Editor reaching a relay on your machine. Both fixes are local; do not commit either.
+
+- **Relay address.** The project carries the demo laptop's network address. To use a relay on your own machine, create a text file named `zap-relay-url.txt` containing `http://127.0.0.1:8787` in the app's data folder. On a Mac that is `~/Library/Application Support/Immerse the Bay/Immerse the Bay/`.
+- **Plain HTTP.** The Editor refuses `http://` addresses by default. In Unity, open Edit > Project Settings > Player > Other Settings and set "Allow downloads over HTTP" to "Always allowed". This changes `ProjectSettings/ProjectSettings.asset`, so undo it before you commit, with the command above.
+
+Start the relay without keys for testing, so it costs nothing:
+
+```sh
+cd relay && env ORBIS_MODE=standin REACTOR_API_KEY= OPENAI_API_KEY= uv run python -m zap_relay
+```
+
 ## Branches and merging
 
 1. Wait for Step 0, then branch from `main` using your branch name from the table at the top.
@@ -129,4 +144,10 @@ Keys live in `.env` at the repo root or in `relay/.env`. Git ignores both. Never
 
 ## AI tools
 
-Every AI coding tool reads `AGENTS.md` at the repo root, which points here. Tell your tool which lane you are. If you run low on usage, have it write a handoff in `docs/handoffs/` from `docs/handoffs/TEMPLATE.md`, so the next person or tool can continue.
+Every AI coding tool reads `AGENTS.md` at the repo root, which points here. Tell your tool which lane you are.
+
+What has worked when running tools unattended on this project:
+
+- **Codex** handles large, multi-file jobs.
+- **Gemini** (Antigravity) works when told to use file tools only; it cannot run shell commands unattended.
+- **Grok** (through the Cursor agent) works on small, single-file jobs with the model `grok-4.7-medium-fast`. On the `high` setting it stalled on a large job. Give it one file and a precise description. If you run low on usage, have it write a handoff in `docs/handoffs/` from `docs/handoffs/TEMPLATE.md`, so the next person or tool can continue.

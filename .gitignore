@@ -6,16 +6,29 @@
 /[Bb]uilds/
 /[Ll]ogs/
 /[Uu]ser[Ss]ettings/
-/[Mm]emoryCaptures/
+/[Mm]emory[Cc]aptures/
 /[Rr]ecordings/
 /.utmp/
+/ExportedObj/
+/UIElementsSchema/
 /[Aa]ssets/AssetStoreTools*
+/[Aa]ssets/Plugins/Editor/JetBrains*
+/[Aa]ssets/[Ss]ceneDependencyCache*
+
+# Editor recovery and temporary assets (ignore their metadata too)
+/[Aa]ssets/_Recovery/
+/[Aa]ssets/_Recovery.meta
+/[Aa]ssets/**/*.blend[0-9]
+/[Aa]ssets/**/*.blend[0-9].meta
 
 # IDE-generated files
 .vs/
 .idea/
 .vscode/
+.consulo/
+.gradle/
 *.csproj
+*.unityproj
 *.sln
 *.slnx
 *.suo
@@ -28,13 +41,35 @@
 *.mdb
 *.opendb
 *.VC.db
+*.DotSettings.user
+*.pidb.meta
+*.pdb.meta
+*.mdb.meta
+
+# Temporary files and crash reports
+*.log
+*.tmp
+sysinfo.txt
+mono_crash.*
+.dirstamp
+tmpinst-dir.stamp
+crashlytics-build.properties
 
 # Build output and local signing credentials
 *.apk
 *.aab
+*.obb
 *.unitypackage
+*.unitypackage.meta
+/*.app/
+/*_BackUpThisFolder_ButDontShipItWithYourGame/
+/*_BurstDebugInformation_DoNotShip/
 *.keystore
 *.jks
+
+# Android build tooling generates these beside plug-ins
+/[Aa]ssets/Plugins/Android/**/*.gradle.backup*
+/[Aa]ssets/Plugins/Android/**/local.properties
 
 # OS files
 .DS_Store

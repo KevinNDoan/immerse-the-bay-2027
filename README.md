@@ -49,6 +49,21 @@ The development APK uses local debug signing. Before publishing, set your final 
 
 Move or rename Unity assets **inside the Editor** so their `.meta` files and references stay intact. Keep `.meta` files in source control. `Library`, `Temp`, `Logs`, `UserSettings`, and build outputs are ignored.
 
+## Git and large assets
+
+Install [Git LFS](https://git-lfs.com/) on every development machine before cloning or adding media. On macOS with Homebrew:
+
+```sh
+brew install git-lfs
+git lfs install
+```
+
+After cloning, run `git lfs pull` in the project folder to ensure the full asset files are downloaded before opening Unity. Commit and push normally; Git LFS uploads the asset contents through its pre-push hook.
+
+`.gitattributes` routes models, textures, audio, video, fonts, and binary baked lighting data through LFS. Scripts, scenes, prefabs, materials, `.meta` files, and other serialized Unity settings stay in ordinary Git. Commit `.gitattributes`, `.gitignore`, `Assets`, `Packages` (including the lockfile), and `ProjectSettings` together.
+
+Use `git lfs ls-files` to inspect managed assets and `git lfs status` before committing. New media with a listed extension is handled automatically. If you add an LFS rule for an already tracked file type, run `git add --renormalize` on those files to stage their conversion. This does not rewrite earlier commits, which retain their original asset copies.
+
 ## Foundation
 
 - Universal Render Pipeline (URP), Linear color, 4× MSAA, mobile performance quality settings.

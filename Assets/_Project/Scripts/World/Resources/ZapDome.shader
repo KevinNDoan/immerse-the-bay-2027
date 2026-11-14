@@ -13,7 +13,7 @@ Shader "Zap/Dome"
             "Queue" = "Geometry"
         }
         LOD 100
-        Cull Front
+        Cull Off
         ZWrite On
         ZTest LEqual
 

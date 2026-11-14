@@ -1,12 +1,9 @@
 using UnityEngine;
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
 using UnityEngine.InputSystem;
 using Zap.Net;
-#endif
 
 namespace Zap.World
 {
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
     public class WorldDebugKeys : MonoBehaviour
     {
         private WorldSession _session;
@@ -106,9 +103,4 @@ namespace Zap.World
             Debug.Log($"[WorldDebugKeys] Prompt: text='{text}', appliesAtSeq={appliesAtSeq}");
         }
     }
-#else
-    public class WorldDebugKeys : MonoBehaviour
-    {
-    }
-#endif
 }

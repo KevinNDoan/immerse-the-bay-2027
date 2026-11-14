@@ -23,9 +23,10 @@ namespace Zap.World
             root.AddComponent<WorldStream>();
             root.AddComponent<WorldSession>();
 
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-            root.AddComponent<WorldDebugKeys>();
-#endif
+            if (Application.isEditor || Debug.isDebugBuild)
+            {
+                root.AddComponent<WorldDebugKeys>();
+            }
         }
     }
 }

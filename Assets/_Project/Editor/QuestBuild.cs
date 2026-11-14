@@ -9,6 +9,8 @@ namespace ImmerseTheBay.Editor
 {
     public static class QuestBuild
     {
+        private const string RelayUrlAssetPath = "Assets/_Project/Scripts/Net/Resources/zap_relay_url.txt";
+
         [MenuItem("Immerse the Bay/Build Quest Development APK")]
         public static void BuildDevelopment()
         {
@@ -22,6 +24,7 @@ namespace ImmerseTheBay.Editor
                 Zap.EditorTools.ZapSceneBuilder.BuildVoidScene();
 
             Directory.CreateDirectory("Builds/Quest");
+            var previousRelayUrl = File.Exists(RelayUrlAssetPath) ? File.ReadAllText(RelayUrlAssetPath) : null;
             Zap.EditorTools.QuestNetworkSetup.ConfigureRelayAddress();
             var previousHttp = PlayerSettings.insecureHttpOption;
             PlayerSettings.insecureHttpOption = InsecureHttpOption.DevelopmentOnly;
@@ -36,7 +39,16 @@ namespace ImmerseTheBay.Editor
                     options = BuildOptions.Development,
                 });
             }
-            finally { PlayerSettings.insecureHttpOption = previousHttp; }
+            finally
+            {
+                PlayerSettings.insecureHttpOption = previousHttp;
+                // The address is baked into the APK but must not stay in the working tree.
+                if (previousRelayUrl != null)
+                    File.WriteAllText(RelayUrlAssetPath, previousRelayUrl);
+                else if (File.Exists(RelayUrlAssetPath))
+                    File.WriteAllText(RelayUrlAssetPath, "");
+                AssetDatabase.Refresh();
+            }
 
             if (report.summary.result != BuildResult.Succeeded)
                 throw new BuildFailedException($"Quest build failed: {report.summary.result} ({report.summary.totalErrors} errors).");

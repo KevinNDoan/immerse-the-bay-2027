@@ -39,6 +39,13 @@ namespace Zap.Core
         [Header("Line between nodes")]
         public float lineWidth = .0025f;
 
+        [Header("Suggested topics")]
+        public float suggestedNodeDiameter = .06f;
+        public float suggestedDistance = .24f;
+        public Color suggestedColor = new Color(.4f, .4f, .4f, 1f);
+        public float suggestedTextSize = .2f;
+        public Color suggestedTextColor = new Color(1f, 1f, 1f, .7f);
+
         [Header("Controls card")]
         public Vector2 controlsCardSize = new Vector2(.5f, .32f);
         public float controlsTextSizeMin = .22f;

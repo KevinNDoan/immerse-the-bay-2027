@@ -20,6 +20,8 @@ namespace Zap.Constellation
         public IReadOnlyList<TopicBall> Balls => _balls;
         public string Status { get; private set; } = "Hold A and say a topic. Release to write it on a ball.";
         public bool Busy => _busy;
+        public bool InWorld => _worldVisible;
+        public bool IsListening => _voice != null && (_voice.IsRecording || _voice.IsStarting);
         private readonly List<TopicBall> _balls = new List<TopicBall>();
         private readonly List<NodeEdge> _edges = new List<NodeEdge>();
         private readonly List<LineRenderer> _lines = new List<LineRenderer>();
@@ -37,6 +39,10 @@ namespace Zap.Constellation
         private bool _busy, _recordButton, _trigger, _worldVisible, _pulling, _dirty;
         private Vector3 _pullMidpoint;
         private float _pullDistance, _lastSave, _recordStart;
+        private bool _cutting;
+        private Vector3 _cutOrigin;
+        private Vector3 _cutDirection;
+        private const float CutRange = 4f;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Install()
@@ -50,6 +56,7 @@ namespace Zap.Constellation
             _savePath = Path.Combine(Application.persistentDataPath, "zap-constellation.json");
             _content = new GameObject("Stars and connections").transform;
             _content.SetParent(transform, false);
+            gameObject.AddComponent<SuggestedStars>().Initialize(this, _content);
             _material = new Material(Shader.Find("Zap/Solid"));
             _material.SetColor("_BaseColor", ZapTheme.Current.nodeColor);
             _lineMaterial = new Material(Shader.Find("Zap/Solid"));
@@ -145,7 +152,7 @@ namespace Zap.Constellation
             yield return ApplyText(text, action, target);
         }
 
-        private IEnumerator ApplyText(string text, string action, TopicBall target)
+        private IEnumerator ApplyText(string text, string action, TopicBall target, Vector3? position = null)
         {
             _busy = true;
             if (action == "steer")
@@ -180,9 +187,14 @@ namespace Zap.Constellation
                     else
                     {
                         var cam = Camera.main.transform;
-                        var location = _right != null ? _right.position + _right.forward * .16f : cam.position + cam.forward * .65f + Vector3.down * .15f;
+                        var location = position ?? (_right != null ? _right.position + _right.forward * .16f : cam.position + cam.forward * .65f + Vector3.down * .15f);
                         target = CreateBall(data, location);
-                        if (parent != null) { _edges.Add(new NodeEdge { from = parent.Data.id, to = data.id }); RebuildLines(); }
+                        if (parent != null)
+                        {
+                            parent.Data.suggestions = SuggestionPicker.Without(SuggestionPicker.Without(parent.Data.suggestions, text), data.topic);
+                            _edges.Add(new NodeEdge { from = parent.Data.id, to = data.id });
+                            RebuildLines();
+                        }
                     }
                     _dirty = true;
                     Save();
@@ -192,6 +204,12 @@ namespace Zap.Constellation
                 }
             }
             _busy = false;
+        }
+
+        public void KeepSuggestion(TopicBall parent, string topic, Vector3 position)
+        {
+            if (_busy || IsListening || InWorld || parent == null || string.IsNullOrWhiteSpace(topic)) return;
+            StartCoroutine(ApplyText(topic, "create", parent, position));
         }
 
         private IEnumerator Post(string endpoint, byte[] bytes, string contentType, Action<string> success, int timeout)
@@ -246,9 +264,34 @@ namespace Zap.Constellation
 
         private void UpdateConstellationControls()
         {
-            if (_input.RightTrigger && !_trigger) _lineStart = Current;
-            if (!_input.RightTrigger && _trigger && _lineStart != null && Current != null && Current != _lineStart)
-            { ToggleLink(_lineStart, Current); _lineStart = null; }
+            if (_input.RightTrigger && !_trigger)
+            {
+                bool onBall = Current != null && Current.Grab.isHovered;
+                _lineStart = onBall ? Current : null;
+                _cutting = !onBall && _right != null;
+                if (_cutting) { _cutOrigin = _right.position; _cutDirection = _right.forward; }
+            }
+            if (_cutting && _input.RightTrigger && _right != null)
+            {
+                var direction = _right.forward;
+                int index = -1;
+                float closest = 0f;
+                for (int i = 0; i < _edges.Count; i++)
+                {
+                    if (!_lines[i].enabled) continue;
+                    if (!LineCutter.SweepCrosses(_cutOrigin, _cutDirection, _right.position, direction, CutRange, _lines[i].GetPosition(0), _lines[i].GetPosition(1), out float distance)) continue;
+                    if (index < 0 || distance < closest) { closest = distance; index = i; }
+                }
+                _cutOrigin = _right.position;
+                _cutDirection = direction;
+                if (index >= 0) { CutEdge(_edges[index]); _cutting = false; }
+            }
+            if (!_input.RightTrigger && _trigger)
+            {
+                _cutting = false;
+                if (_lineStart != null && Current != null && Current != _lineStart) ToggleLink(_lineStart, Current);
+                _lineStart = null;
+            }
             _trigger = _input.RightTrigger;
             bool canPull = _input.LeftGrip && _input.RightGrip && _left != null && _right != null && !_balls.Any(b => b.Grab.isSelected);
             if (canPull)
@@ -267,6 +310,21 @@ namespace Zap.Constellation
                 _pullMidpoint = mid; _pullDistance = distance;
             }
             _pulling = canPull;
+        }
+
+        private void CutEdge(NodeEdge edge)
+        {
+            var from = _balls.FirstOrDefault(b => b.Data.id == edge.from);
+            var to = _balls.FirstOrDefault(b => b.Data.id == edge.to);
+            if (from != null && to != null) ToggleLink(from, to);
+            else
+            {
+                _edges.Remove(edge);
+                _dirty = true;
+                RebuildLines();
+                Save();
+            }
+            SetStatus("Connection cut.");
         }
 
         public void ToggleLink(TopicBall from, TopicBall to)
@@ -348,7 +406,7 @@ namespace Zap.Constellation
             }
             _hud.transform.rotation = Quaternion.LookRotation(_hud.transform.position - Camera.main.transform.position);
             string title = _worldVisible ? _worldNode?.Data.topic : (Current != null ? Current.Data.topic : "ZAP!");
-            string controls = _worldVisible ? "Sticks: move / look · A: steer by voice\nB: edit this topic · Trigger: event · Y: return" : "A: new topic · B: edit selected\nGrip: grab / throw · X: enter world";
+            string controls = _worldVisible ? "Sticks: move / look · A: steer by voice\nB: edit this topic · Trigger: event · Y: return" : "A: new topic · B: edit selected\nGrip: grab / throw · X: enter world\nTrigger: link two balls · sweep a line to cut";
             _hud.text = title + "\n\n" + (_voice.IsRecording ? "● Listening " + new string('|', Mathf.Clamp(Mathf.RoundToInt(_voice.Level * 150), 1, 12)) : Status)
                 + "\n\n" + controls;
         }

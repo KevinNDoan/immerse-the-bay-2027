@@ -14,6 +14,58 @@ namespace Zap.World.Tests
     public class ConstellationTests
     {
         [Test]
+        public void LineCutterDetectsSweepAcrossLine()
+        {
+            var origin = Vector3.zero;
+            var prevDir = new Vector3(-0.2f, 0f, 1f);
+            var currDir = new Vector3(0.2f, 0f, 1f);
+            float range = 4f;
+            var lineStart = new Vector3(0f, -0.5f, 1f);
+            var lineEnd = new Vector3(0f, 0.5f, 1f);
+
+            Assert.IsTrue(LineCutter.SweepCrosses(origin, prevDir, origin, currDir, range, lineStart, lineEnd, out float distance));
+            Assert.That(distance, Is.EqualTo(1f).Within(0.01f));
+
+            Assert.IsFalse(LineCutter.SweepCrosses(origin, prevDir, origin, currDir, range, new Vector3(0f, -0.5f, 10f), new Vector3(0f, 0.5f, 10f), out distance));
+            Assert.AreEqual(0f, distance);
+
+            Assert.IsFalse(LineCutter.SweepCrosses(origin, prevDir, origin, currDir, range, new Vector3(2f, -0.5f, 1f), new Vector3(2f, 0.5f, 1f), out distance));
+            Assert.AreEqual(0f, distance);
+
+            Assert.IsFalse(LineCutter.SweepCrosses(origin, prevDir, origin, currDir, range, new Vector3(0f, 0.2f, 1f), new Vector3(0f, 0.5f, 1f), out distance));
+            Assert.AreEqual(0f, distance);
+
+            var movePrev = new Vector3(-0.2f, 0f, 0f);
+            var moveCurr = new Vector3(0.2f, 0f, 0f);
+            var moveDir = new Vector3(0f, 0f, 1f);
+            Assert.IsTrue(LineCutter.SweepCrosses(movePrev, moveDir, moveCurr, moveDir, range, lineStart, lineEnd, out distance));
+            Assert.That(distance, Is.EqualTo(1.02f).Within(0.01f));
+
+            Assert.IsFalse(LineCutter.SweepCrosses(origin, prevDir, origin, prevDir, range, lineStart, lineEnd, out distance));
+            Assert.AreEqual(0f, distance);
+
+            Assert.IsFalse(LineCutter.SweepCrosses(origin, prevDir, origin, currDir, 0f, lineStart, lineEnd, out distance));
+            Assert.AreEqual(0f, distance);
+        }
+
+        [Test]
+        public void SuggestionPickerFiltersAndRemovesTopics()
+        {
+            var node = new NodeData
+            {
+                topic = "Astronomy",
+                suggestions = new[] { "  Nebulae  ", "astronomy", "NEBULAE", " Moon ", "Exoplanets", "Galaxies", "Black holes" }
+            };
+            var existing = new[] { node, new NodeData { topic = "moon" }, null };
+
+            CollectionAssert.AreEqual(new[] { "Nebulae", "Exoplanets", "Galaxies" }, SuggestionPicker.Pick(node, existing));
+            CollectionAssert.IsEmpty(SuggestionPicker.Pick(null, existing));
+            CollectionAssert.IsEmpty(SuggestionPicker.Pick(new NodeData { suggestions = null }, existing));
+            CollectionAssert.AreEqual(new[] { "Venus" }, SuggestionPicker.Without(new[] { "Mars", "Venus", " MARS " }, "mars"));
+            CollectionAssert.IsEmpty(SuggestionPicker.Without(null, "Mars"));
+        }
+
+        [Test]
         public void ParentContextIncludesMultipleBranchesAndSurvivesSave()
         {
             var ocean = new NodeData { topic = "Ocean ecosystems", summary = "Life in the deep ocean" };

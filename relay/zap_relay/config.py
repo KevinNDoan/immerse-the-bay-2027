@@ -41,12 +41,12 @@ def load_settings(env_file: Path | None = None) -> Settings:
     return Settings(mode=mode, api_key=api_key, model=model, port=port)
 
 
-def _text(name: str, default: str) -> str:
+def _text(name: str, default: str, *, empty_is_default: bool = True) -> str:
     value = os.environ.get(name)
     if value is None:
         return default
     stripped = value.strip()
-    if stripped == "":
+    if stripped == "" and empty_is_default:
         return default
     return stripped
 

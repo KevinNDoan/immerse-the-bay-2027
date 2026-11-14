@@ -1,5 +1,9 @@
 # ZAP! planning doc
 
+## Implementation update — 2026-11-14
+
+The owner approved work beyond Stage 2: prioritize speech-based creation/editing, throwable balls and live Orbis; defer Satie and visual polish while the designer builds a skybox. The owner selected **OpenAI GPT-6 Luna**, replacing the Claude API choices below. New balls inherit selected-parent context; multiple parents and ancestor context are persisted and used for world generation. See `docs/voice-worlds.md` for current controls and setup, and the latest handoff for verification. The remaining sections preserve the original product plan, not a claim that every feature is delivered.
+
 A VR study tool for Quest 3: speak a topic, throw it into a midnight void as a star, connect stars into a constellation, and step inside any star to explore a generated world of that topic.
 
 Vendor facts were checked against the vendors' own docs on 2026-11-14. Items marked **(untested)** still need a quick trial.

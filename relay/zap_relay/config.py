@@ -20,6 +20,11 @@ class Settings:
     api_key: str
     model: str
     port: int
+    max_width: int = 1280
+    resolution: str = ""
+    speech_model: str = "base.en"
+    openai_key: str = ""
+    node_model: str = "gpt-6-luna"
 
     def __repr__(self) -> str:
         return f"Settings(mode={self.mode!r}, model={self.model!r}, port={self.port})"
@@ -28,8 +33,9 @@ class Settings:
 def load_settings(env_file: Path | None = None) -> Settings:
     """Read settings. Refuse live mode when REACTOR_API_KEY is empty."""
     path = ENV_PATH if env_file is None else env_file
-    if not all(name in os.environ for name in SETTING_NAMES):
-        load_dotenv(path, override=False)
+    if env_file is None:
+        load_dotenv(ENV_PATH.parent.parent / ".env", override=False)
+    load_dotenv(path, override=False)
 
     mode = _text("ORBIS_MODE", "standin")
     api_key = _text("REACTOR_API_KEY", "")
@@ -40,7 +46,17 @@ def load_settings(env_file: Path | None = None) -> Settings:
         raise SystemExit("ORBIS_MODE must be standin or live")
     if mode == "live" and api_key == "":
         raise SystemExit("REACTOR_API_KEY is required when ORBIS_MODE=live")
-    return Settings(mode=mode, api_key=api_key, model=model, port=port)
+    try:
+        max_width = int(_text("RELAY_MAX_WIDTH", "1280"))
+        if not 320 <= max_width <= 1920:
+            raise ValueError()
+    except ValueError:
+        raise SystemExit("RELAY_MAX_WIDTH must be between 320 and 1920") from None
+    return Settings(mode=mode, api_key=api_key, model=model, port=port,
+                    max_width=max_width, resolution=_text("ORBIS_RESOLUTION", ""),
+                    speech_model=_text("SPEECH_MODEL", "base.en"),
+                    openai_key=_text("OPENAI_API_KEY", ""),
+                    node_model=_text("NODE_MODEL", "gpt-6-luna"))
 
 
 def _text(name: str, default: str, *, empty_is_default: bool = True) -> str:

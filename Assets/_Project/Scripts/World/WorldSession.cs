@@ -11,10 +11,12 @@ namespace Zap.World
         public event Action<StatusMessage> OnStatus;
         public event Action<string, uint> OnPrompt;
         public event Action<ErrorMessage> OnError;
+        public bool IsEntered { get; private set; }
 
         private RelayClient _relayClient;
         private DomeView _domeView;
         private WorldStream _worldStream;
+        private bool _awaitingEnter;
 
         private void Awake()
         {
@@ -50,6 +52,8 @@ namespace Zap.World
 
         public void Enter(string nodeId, string topic, string prompt = "", string imageBase64 = "")
         {
+            IsEntered = true;
+            _awaitingEnter = true;
             State = "connecting";
 
             if (_domeView == null)
@@ -75,6 +79,8 @@ namespace Zap.World
 
         public void Exit()
         {
+            IsEntered = false;
+            _awaitingEnter = false;
             if (_domeView == null)
             {
                 _domeView = GetComponent<DomeView>();
@@ -113,9 +119,16 @@ namespace Zap.World
 
         private void HandleRelayStatus(StatusMessage status)
         {
+            if (_awaitingEnter && status.state == "idle" && string.IsNullOrEmpty(status.detail)) return;
+            if (status.state == "connecting" || status.state == "streaming" || status.state == "error") _awaitingEnter = false;
             if (status != null && !string.IsNullOrEmpty(status.state))
             {
                 State = status.state;
+                if (State == "error" || State == "idle")
+                {
+                    IsEntered = false;
+                    if (_domeView != null) _domeView.SetVisible(false);
+                }
             }
             OnStatus?.Invoke(status);
         }

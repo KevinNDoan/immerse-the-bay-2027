@@ -15,7 +15,7 @@ namespace Zap.World
         private const int LonSegments = 64;
         private const int LatSegments = 32;
 
-        public MappingMode Mode { get; private set; } = MappingMode.Wrap;
+        public MappingMode Mode { get; private set; } = MappingMode.Front;
 
         private Mesh _mesh;
         private MeshFilter _meshFilter;
@@ -142,7 +142,7 @@ namespace Zap.World
 
             _mesh.vertices = vertices;
             _mesh.normals = normals;
-            _mesh.uv = _wrapUVs; // Default is Wrap
+            _mesh.uv = _frontUVs;
             _mesh.triangles = triangles;
             _mesh.RecalculateBounds();
 

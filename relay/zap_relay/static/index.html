@@ -25,6 +25,12 @@
 <body>
   <main>
     <header><h1>ZAP!</h1><span id="status">connecting</span></header>
+    <p id="mode">Checking relay…</p>
+    <form id="enter-form">
+      <input id="topic" aria-label="World topic" placeholder="A topic to explore" value="Underwater volcanoes">
+      <button type="submit">Enter world</button>
+    </form>
+    <p><button id="stop" type="button">Close world</button></p>
     <img src="/stream.mjpg" alt="Live generated world">
     <h2>Prompt in force</h2>
     <p id="prompt">Waiting for a world…</p>
@@ -39,10 +45,11 @@
     const input = document.querySelector('#steer');
     const send = document.querySelector('#send');
     let socket;
-    let startedDemo = false;
+    fetch('/health').then(r => r.json()).then(h => {
+      document.querySelector('#mode').textContent = h.mode === 'live' ? `Live Orbis · ${h.model}` : 'Stand-in test stream';
+    });
 
     function connect() {
-      startedDemo = false;
       const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
       socket = new WebSocket(`${scheme}://${location.host}/ws/world`);
       socket.addEventListener('message', event => {
@@ -50,10 +57,8 @@
         const message = JSON.parse(event.data);
         if (message.t === 'status') {
           status.textContent = message.state;
-          if (message.state === 'idle' && !startedDemo) {
-            startedDemo = true;
-            socket.send(JSON.stringify({t: 'enter', nodeId: 'judges', topic: 'ZAP! demo world', prompt: '', image: ''}));
-          }
+          if (message.detail) status.textContent += ` — ${message.detail}`;
+          send.disabled = message.state !== 'streaming';
         }
         if (message.t === 'prompt') prompt.textContent = message.text;
         if (message.t === 'error') status.textContent = `error: ${message.detail}`;
@@ -68,6 +73,15 @@
       input.value = '';
       send.disabled = true;
       setTimeout(() => { send.disabled = false; }, 1800);
+    });
+    document.querySelector('#enter-form').addEventListener('submit', event => {
+      event.preventDefault();
+      const topic = document.querySelector('#topic').value.trim();
+      if (topic && socket.readyState === WebSocket.OPEN)
+        socket.send(JSON.stringify({t:'enter', nodeId:'judges', topic, prompt:'', image:''}));
+    });
+    document.querySelector('#stop').addEventListener('click', async () => {
+      await fetch('/world/kill', {method:'POST'});
     });
     connect();
   </script>

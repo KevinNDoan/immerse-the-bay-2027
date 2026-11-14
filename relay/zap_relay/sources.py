@@ -7,6 +7,8 @@ import base64
 import io
 import math
 import time
+import contextlib
+import threading
 from collections.abc import Awaitable, Callable
 from typing import Protocol
 
@@ -111,124 +113,175 @@ class StandinSource:
 
 
 class ReactorSource:
-    """Receive Orbis media through reactor-sdk 1.14.x."""
+    """Bounded latest-frame bridge; command shapes follow the Orbis schema."""
 
-    def __init__(
-        self,
-        api_key: str,
-        model: str,
-        on_video: VideoCallback,
-        on_audio: AudioCallback,
-        on_error: ErrorCallback,
-    ) -> None:
-        self._api_key = api_key
-        self._model = model
-        self._on_video = on_video
-        self._on_audio = on_audio
-        self._on_error = on_error
-        self._reactor: object | None = None
-        self._loop: asyncio.AbstractEventLoop | None = None
-        self._video_seq = 0
-        self._audio_seq = 0
+    def __init__(self, api_key, model, on_video, on_audio, on_error,
+                 max_width=1280, resolution="", reactor_factory=None):
+        self._api_key, self._model = api_key, model
+        self._on_video, self._on_audio, self._on_error = on_video, on_audio, on_error
+        self._max_width, self._resolution = max_width, resolution
+        self._factory = reactor_factory
+        self._reactor = None
+        self._loop = None
+        self._video_seq = self._audio_seq = 0
+        self._active = False
+        self._pending = None
+        self._pending_audio = []
+        self._frame_lock = threading.Lock()
+        self._pump = None
+        self._restart = None
+        self.available_resolutions = []
 
     async def start(self, topic: str, prompt: str, image: str) -> None:
         self._loop = asyncio.get_running_loop()
-        self._video_seq = 0
-        self._audio_seq = 0
+        self._video_seq = self._audio_seq = 0
         if self._reactor is None:
-            from reactor_sdk import Reactor
-
-            # https://docs.reactor.inc/sdk-reference/python/reactor.md
-            reactor = Reactor(model_name=self._model, api_key=self._api_key)
+            if self._factory is None:
+                from reactor_sdk import Reactor
+                self._factory = Reactor
+            reactor = self._factory(model_name=self._model, api_key=self._api_key)
             self._reactor = reactor
-            # https://docs.reactor.inc/sdk-reference/python/reactor.md
-            video = reactor.track("main_video")
-            # https://docs.reactor.inc/sdk-reference/python/track.md
-            video.on_frame(self._receive_video)
-            # https://docs.reactor.inc/sdk-reference/python/reactor.md
-            audio = reactor.track("main_audio")
-            # https://docs.reactor.inc/sdk-reference/python/track.md
-            audio.on_frame(self._receive_audio)
-            # https://docs.reactor.inc/sdk-reference/python/reactor.md
+            reactor.track("main_video").on_frame(self._receive_video)
+            reactor.track("main_audio").on_frame(self._receive_audio)
             reactor.on_error(self._receive_error)
-            # https://docs.reactor.inc/sdk-reference/python/reactor.md
-            await reactor.connect()
+            reactor.on_message(self._receive_message)
+            await asyncio.wait_for(reactor.connect(), 90)
         else:
             reactor = self._reactor
-            # https://docs.reactor.inc/sdk-reference/python/reactor.md
-            await reactor.send_command("reset", {})  # type: ignore[attr-defined]  # UNVERIFIED
-
-        # https://docs.reactor.inc/sdk-reference/python/reactor.md
-        await reactor.send_command(  # type: ignore[attr-defined]
-            "set_resolution", {"width": WIDTH, "height": HEIGHT}
-        )  # UNVERIFIED
-        # https://docs.reactor.inc/sdk-reference/python/reactor.md
-        await reactor.send_command(  # type: ignore[attr-defined]
-            "set_audio_enabled", {"enabled": True}
-        )  # UNVERIFIED
+            await reactor.send_command("reset", {})
+        if self._resolution:
+            if self.available_resolutions and self._resolution not in self.available_resolutions:
+                raise ValueError("ORBIS_RESOLUTION is not offered by this deployment")
+            await reactor.send_command("set_resolution", {"resolution": self._resolution})
+        # Sound is enabled by the model's default; do not send an unnecessary toggle.
         if image:
             image_bytes = base64.b64decode(image, validate=True)
-            # https://docs.reactor.inc/sdk-reference/python/reactor.md
-            uploaded = await reactor.upload_file(  # type: ignore[attr-defined]
-                image_bytes, name="initial.jpg", mime_type="image/jpeg"
-            )
-            # https://docs.reactor.inc/sdk-reference/python/reactor.md
-            await reactor.send_command("set_image", {"image": uploaded})  # type: ignore[attr-defined]
-        # https://docs.reactor.inc/sdk-reference/python/reactor.md
-        await reactor.send_command("set_prompt", {"prompt": prompt})  # type: ignore[attr-defined]
-        # https://docs.reactor.inc/sdk-reference/python/reactor.md
-        await reactor.send_command("start", {})  # type: ignore[attr-defined]  # UNVERIFIED
+            uploaded = await reactor.upload_file(image_bytes, name="initial.jpg", mime_type="image/jpeg")
+            await reactor.send_command("set_image", {"image": uploaded})
+        await reactor.send_command("set_prompt", {"prompt": prompt})
+        self._active = True
+        with self._frame_lock:
+            self._pending = None
+            self._pending_audio.clear()
+        self._pump = asyncio.create_task(self._pump_media())
+        await reactor.send_command("start", {})
 
     async def steer(self, prompt: str) -> int:
-        reactor = self._require_reactor()
-        applies_at = self._video_seq + 33
-        # https://docs.reactor.inc/sdk-reference/python/reactor.md
-        await reactor.send_command("set_prompt", {"prompt": prompt})  # type: ignore[attr-defined]
+        if self._reactor is None or not self._active:
+            raise RuntimeError("Orbis session is not connected")
+        applies_at = self._video_seq + math.ceil(STEER_DELAY_SECONDS * FPS)
+        await self._reactor.send_command("set_prompt", {"prompt": prompt})
         return applies_at
 
     async def stop(self) -> None:
-        if self._reactor is not None:
-            # https://docs.reactor.inc/sdk-reference/python/reactor.md
-            await self._reactor.send_command("pause", {})  # type: ignore[attr-defined]  # UNVERIFIED
+        was_active = self._active
+        self._active = False
+        for task in (self._pump, self._restart):
+            if task is not None and task is not asyncio.current_task():
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+        self._pump = self._restart = None
+        with self._frame_lock:
+            self._pending = None
+            self._pending_audio.clear()
+        if self._reactor is not None and was_active:
+            await asyncio.wait_for(self._reactor.send_command("pause", {}), 10)
 
     async def close(self) -> None:
+        with contextlib.suppress(Exception):
+            await self.stop()
         reactor, self._reactor = self._reactor, None
-        if reactor is None:
+        if reactor is not None:
+            try:
+                await asyncio.wait_for(reactor.disconnect(), 15)
+            finally:
+                reactor.close()
+
+    def _receive_video(self, frame, *args):
+        if not self._active:
             return
+        frame = np.asarray(frame)
+        if frame.ndim == 4:
+            if not len(frame):
+                return
+            frame = frame[-1]  # Batch delivery: newest only, never queue old video.
+        if frame.ndim != 3 or frame.shape[-1] != 3:
+            self._receive_error(ValueError("Orbis returned an unsupported RGB frame shape"))
+            return
+        with self._frame_lock:
+            self._pending = frame.copy()
+
+    def _receive_audio(self, frame, sample_rate, channels):
+        if not self._active:
+            return
+        if sample_rate != 48000 or channels != 1:
+            self._receive_error(ValueError("Orbis audio must be 48000 Hz mono PCM"))
+            return
+        with self._frame_lock:
+            self._pending_audio.append(np.asarray(frame).astype("<i2", copy=False).tobytes())
+            self._pending_audio = self._pending_audio[-16:]
+
+    async def _pump_media(self):
+        last_frame = time.monotonic()
         try:
-            # https://docs.reactor.inc/sdk-reference/python/reactor.md
-            await reactor.disconnect()  # type: ignore[attr-defined]
-        finally:
-            # https://docs.reactor.inc/sdk-reference/python/reactor.md
-            reactor.close()  # type: ignore[attr-defined]
+            while self._active:
+                with self._frame_lock:
+                    frame, self._pending = self._pending, None
+                    audio, self._pending_audio = self._pending_audio, []
+                if frame is not None:
+                    jpeg = await asyncio.to_thread(self._encode, frame)
+                    if not self._active:
+                        return
+                    await self._on_video(jpeg, self._video_seq)
+                    self._video_seq += 1
+                    last_frame = time.monotonic()
+                for pcm in audio:
+                    await self._on_audio(pcm, self._audio_seq)
+                    self._audio_seq += 1
+                if time.monotonic() - last_frame > 90:
+                    raise RuntimeError("No Orbis video arrived for 90 seconds. Check capacity and the Reactor key.")
+                await asyncio.sleep(1 / FPS)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            self._receive_error(exc)
 
-    def _require_reactor(self) -> object:
-        if self._reactor is None:
-            raise RuntimeError("Orbis session is not connected")
-        return self._reactor
-
-    def _receive_video(self, frame: np.ndarray, *args: object) -> None:
+    def _encode(self, frame):
+        image = Image.fromarray(frame)
+        if image.width > self._max_width:
+            image = image.resize((self._max_width, round(image.height * self._max_width / image.width)), Image.Resampling.BILINEAR)
         output = io.BytesIO()
-        Image.fromarray(frame, mode="RGB").save(output, format="JPEG", quality=80)
-        seq = self._video_seq
-        self._video_seq += 1
-        self._schedule(self._on_video(output.getvalue(), seq))
+        image.save(output, format="JPEG", quality=80)
+        return output.getvalue()
 
-    def _receive_audio(self, frame: np.ndarray, sample_rate: int, channels: int) -> None:
-        if sample_rate != 48_000 or channels != 1:
-            self._schedule(self._on_error(f"unexpected Orbis audio format: {sample_rate} Hz/{channels}ch"))
-            return
-        seq = self._audio_seq
-        self._audio_seq += 1
-        self._schedule(self._on_audio(frame.astype("<i2", copy=False).tobytes(), seq))
+    def _receive_message(self, message):
+        kind, data = message.get("type"), message.get("data") or {}
+        if kind == "state":
+            self.available_resolutions = data.get("available_resolutions", [])
+        elif kind == "command_error":
+            self._receive_error(RuntimeError(f"Orbis rejected {data.get('command', 'command')}: {data.get('reason', 'unknown error')}"))
+        elif kind == "generation_complete" and self._active and self._loop:
+            self._loop.call_soon_threadsafe(self._queue_restart)
 
-    def _receive_error(self, error: Exception) -> None:
-        self._schedule(self._on_error(str(error)))
+    def _queue_restart(self):
+        if self._active and (self._restart is None or self._restart.done()):
+            self._restart = asyncio.create_task(self._restart_generation())
 
-    def _schedule(self, awaitable: Awaitable[None]) -> None:
-        if self._loop is None:
-            return
-        asyncio.run_coroutine_threadsafe(awaitable, self._loop)
+    async def _restart_generation(self):
+        try:
+            if self._active and self._reactor:
+                await self._reactor.send_command("start", {})
+        except Exception as exc:
+            self._receive_error(exc)
+
+    def _receive_error(self, error):
+        if self._loop and not self._loop.is_closed():
+            # SDK errors may contain credential-bearing URLs; redact the known key.
+            detail = str(error)
+            if self._api_key:
+                detail = detail.replace(self._api_key, "[redacted]")
+            asyncio.run_coroutine_threadsafe(self._on_error(detail), self._loop)
 
 
 def _wrap(text: str, width: int) -> str:

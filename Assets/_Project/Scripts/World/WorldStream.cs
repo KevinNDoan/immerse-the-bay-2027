@@ -72,7 +72,7 @@ namespace Zap.World
                 _pendingFrameBytes = null;
                 LatestSeq = _pendingSeq;
 
-                ImageConversion.LoadImage(_texture, frame);
+                if (!ImageConversion.LoadImage(_texture, frame)) return;
 
                 if (_domeView == null)
                 {

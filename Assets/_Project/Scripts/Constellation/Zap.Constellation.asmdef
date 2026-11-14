@@ -1,0 +1,6 @@
+{
+  "name": "Zap.Constellation",
+  "rootNamespace": "Zap.Constellation",
+  "references": ["Zap.Core", "Zap.Net", "Zap.World", "Unity.InputSystem", "Unity.XR.Interaction.Toolkit", "Unity.TextMeshPro", "Unity.ugui"],
+  "autoReferenced": true
+}

@@ -15,6 +15,7 @@ namespace Zap.Net
 
         // Events
         public event Action<byte[], uint> OnVideoFrame;
+        public event Action<byte[]> OnAudioFrame;
         public event Action<StatusMessage> OnStatus;
         public event Action<string, uint> OnPrompt;
         public event Action<ErrorMessage> OnError;
@@ -34,6 +35,7 @@ namespace Zap.Net
         private CancellationTokenSource _cts;
         private Task _connectionTask;
         private bool _isQuitting;
+        private string _endpoint;
 
         public bool IsConnected => _ws != null && _ws.State == WebSocketState.Open;
 
@@ -50,7 +52,8 @@ namespace Zap.Net
         private void StartConnection()
         {
             if (_cts != null) return;
-
+            // Resources.Load must run on Unity's main thread, before Task.Run.
+            _endpoint = RelayConfig.WorldWsUrl;
             _cts = new CancellationTokenSource();
             _connectionTask = Task.Run(() => ConnectionLoopAsync(_cts.Token));
         }
@@ -64,7 +67,7 @@ namespace Zap.Net
                 try
                 {
                     _ws = new ClientWebSocket();
-                    var uri = new Uri(RelayConfig.WorldWsUrl);
+                    var uri = new Uri(_endpoint);
                     await _ws.ConnectAsync(uri, ct);
 
                     // Successfully connected
@@ -102,6 +105,9 @@ namespace Zap.Net
                 finally
                 {
                     CleanupSocket();
+                    EnqueueMainThread(() => OnStatus?.Invoke(new StatusMessage {
+                        state = "idle", detail = "Relay disconnected. Reconnecting; enter the world again when ready."
+                    }));
                 }
 
                 if (ct.IsCancellationRequested || _isQuitting)
@@ -177,6 +183,8 @@ namespace Zap.Net
                     }
 
                     ms.Write(segmentBuffer, 0, result.Count);
+                    if (ms.Length > 8 * 1024 * 1024)
+                        throw new InvalidDataException("Relay message exceeds 8 MB.");
                 } while (!result.EndOfMessage);
 
                 if (result.MessageType == WebSocketMessageType.Binary)
@@ -220,7 +228,9 @@ namespace Zap.Net
             }
             else if (type == 2)
             {
-                // Audio PCM: ignore for now, do not throw
+                var pcm = new byte[(int)ms.Length - 13];
+                Buffer.BlockCopy(raw, 13, pcm, 0, pcm.Length);
+                OnAudioFrame?.Invoke(pcm); // Audio consumer uses a bounded, thread-safe ring.
             }
         }
 
@@ -272,6 +282,7 @@ namespace Zap.Net
 
         public void Enter(string nodeId, string topic, string prompt = "", string imageBase64 = "")
         {
+            ClearFrames();
             var msg = new EnterMessage
             {
                 t = "enter",
@@ -296,8 +307,14 @@ namespace Zap.Net
 
         public void Exit()
         {
+            ClearFrames();
             var msg = new ExitMessage { t = "exit" };
             SendJson(JsonUtility.ToJson(msg));
+        }
+
+        private void ClearFrames()
+        {
+            lock (_frameLock) { _pendingFrame = null; _pendingFrameSeq = 0; }
         }
 
         public void Ping()

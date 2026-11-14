@@ -6,7 +6,7 @@ Updated 2026-11-14. This file is read by AI coding tools. Keep it in this style:
 
 - Never edit files outside the folders your lane owns. See Lanes.
 - Never hand-edit `.unity`, `.prefab`, `.asset`, `.mat` or `.meta` files. Build scenes and objects from C# (editor scripts or at startup).
-- Never write keys, tokens or passwords into any tracked file. Keys live only in `relay/.env`, which is gitignored.
+- Never write keys, tokens or passwords into any tracked file. Keys live in the owner-selected root `.env` or fallback `relay/.env`; both are gitignored.
 - Never create accounts or sign in to any service.
 - Never start Unity (Editor or batch) unless your brief says to. Only one Unity process can open this project.
 - Never change `Packages/manifest.json` or anything in `ProjectSettings/`. Request the change in your handoff.

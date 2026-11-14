@@ -44,6 +44,7 @@ namespace Zap.Core
 
             ConfigureCamera(missing);
             ConfigureLighting();
+            CreatePlaceholderStars();
             DisableLocomotion(disabled, missing);
 
             Debug.Log($"ZAP Void disabled: {string.Join(", ", disabled)}.");
@@ -70,6 +71,30 @@ namespace Zap.Core
             RenderSettings.skybox = null;
             RenderSettings.ambientMode = AmbientMode.Flat;
             RenderSettings.ambientLight = ZapColors.VoidLift;
+        }
+
+        // Cheap temporary depth cues; replace this root when the skybox arrives.
+        static void CreatePlaceholderStars()
+        {
+            var shader = Shader.Find("Zap/Solid");
+            if (shader == null) return;
+            var primitive = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            var sphere = primitive.GetComponent<MeshFilter>().sharedMesh;
+            var random = new System.Random(42);
+            var pieces = new CombineInstance[36];
+            for (int i = 0; i < pieces.Length; i++)
+            {
+                var direction = new Vector3((float)random.NextDouble() * 2 - 1,
+                    (float)random.NextDouble() * 1.5f - .5f, (float)random.NextDouble() * 2 - 1).normalized;
+                pieces[i] = new CombineInstance { mesh = sphere,
+                    transform = Matrix4x4.TRS(direction * 9 + Vector3.up * 1.4f, Quaternion.identity, Vector3.one * .025f) };
+            }
+            Object.Destroy(primitive);
+            var root = new GameObject("Temporary void stars — replace with skybox");
+            var mesh = new Mesh { name = "Placeholder stars" }; mesh.CombineMeshes(pieces);
+            root.AddComponent<MeshFilter>().sharedMesh = mesh;
+            var material = new Material(shader); material.SetColor("_BaseColor", new Color(.22f, .2f, .27f));
+            root.AddComponent<MeshRenderer>().sharedMaterial = material;
         }
 
         static void DisableLocomotion(List<string> disabled, List<string> missing)

@@ -22,13 +22,21 @@ namespace ImmerseTheBay.Editor
                 Zap.EditorTools.ZapSceneBuilder.BuildVoidScene();
 
             Directory.CreateDirectory("Builds/Quest");
-            var report = BuildPipeline.BuildPlayer(new BuildPlayerOptions
+            Zap.EditorTools.QuestNetworkSetup.ConfigureRelayAddress();
+            var previousHttp = PlayerSettings.insecureHttpOption;
+            PlayerSettings.insecureHttpOption = InsecureHttpOption.DevelopmentOnly;
+            BuildReport report;
+            try
             {
-                scenes = new[] { Zap.EditorTools.ZapSceneBuilder.VoidScenePath },
-                target = BuildTarget.Android,
-                locationPathName = "Builds/Quest/ImmerseTheBay.apk",
-                options = BuildOptions.Development,
-            });
+                report = BuildPipeline.BuildPlayer(new BuildPlayerOptions
+                {
+                    scenes = new[] { Zap.EditorTools.ZapSceneBuilder.VoidScenePath },
+                    target = BuildTarget.Android,
+                    locationPathName = "Builds/Quest/ImmerseTheBay.apk",
+                    options = BuildOptions.Development,
+                });
+            }
+            finally { PlayerSettings.insecureHttpOption = previousHttp; }
 
             if (report.summary.result != BuildResult.Succeeded)
                 throw new BuildFailedException($"Quest build failed: {report.summary.result} ({report.summary.totalErrors} errors).");

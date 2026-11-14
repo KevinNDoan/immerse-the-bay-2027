@@ -103,5 +103,6 @@ def test_root_serves_judges_page_and_kill_is_idempotent() -> None:
         response = client.get("/")
         assert response.status_code == 200
         assert "ZAP! live world" in response.text
-        assert "message.state === 'idle'" in response.text
+        assert "enter-form" in response.text
+        assert "startedDemo" not in response.text
         assert client.post("/world/kill").json() == {"ok": True}

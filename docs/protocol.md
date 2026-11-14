@@ -14,6 +14,9 @@ Updated 2026-11-14. Agent-facing. This is the contract between `relay/` and `Ass
 - `GET /` returns the judges' page: the live picture, the prompt in force, and a text box that sends a steer.
 - `GET /stream.mjpg` returns the current video as multipart MJPEG.
 - `POST /world/kill` closes any open Orbis session and returns 200 `{"ok":true}`.
+- `GET /capabilities` reports Orbis mode/configured flags, local speech installation/model and whether the OpenAI key is configured. Never returns secrets.
+- `POST /speech/transcribe`: mono PCM16 WAV body, 8–48 kHz, 0.3–20 seconds, maximum 4 MB. Returns `{"text":"..."}`. Audio stays in memory; inference runs locally.
+- `POST /nodes/update`: JSON `{action:"create"|"edit", text:"...", node:{topic,summary,worldPrompt}, parents:[{id,topic,summary}]}`. Up to six ancestor notes, 16 KB request limit. Returns `{topic,summary,worldPrompt,suggestions,mode,notice}`. `mode` is `ai` (GPT-6 Luna) or `direct` (no key). Errors leave the client node unchanged.
 
 ## WebSocket `/ws/world`
 
@@ -32,7 +35,7 @@ Updated 2026-11-14. Agent-facing. This is the contract between `relay/` and `Ass
 ### JSON messages (client to server)
 
 - `{"t":"enter","nodeId":"<id>","topic":"<text>","prompt":"<text, may be empty>","image":"<base64 JPEG, may be empty>"}`
-- `{"t":"steer","kind":"move"|"look"|"event"|"voice","text":"<instruction>"}`
+- `{"t":"steer","kind":"move"|"look"|"event"|"voice"|"scene","text":"<instruction>"}`
 - `{"t":"exit"}`
 - `{"t":"ping"}`
 
@@ -50,8 +53,10 @@ Updated 2026-11-14. Agent-facing. This is the contract between `relay/` and `Ass
 - `enter` in stand-in mode: start generated frames.
 - `enter` while already streaming: end the current world first.
 - `steer`: the relay composes the new full prompt, applies it, and replies with `prompt`. `appliesAtSeq` is the first video frame expected to show the change.
+- Prompts have a scene slot, latest camera instruction and latest event/voice instruction. These replace previous instructions instead of growing forever. `scene` replaces the base context after a note edit and clears old camera/event slots.
 - `exit`: stop sending frames and send `status` idle. In live mode, close the Orbis session after 45 seconds without a new `enter`.
-- Socket closed by the client: treat as `exit`.
-- Video target: 832x480, 18 frames per second, JPEG quality 80.
+- Socket closed by the controlling client: treat as `exit`, even when judges are watching. Observers do not own or auto-start worlds. Pending connects can be cancelled by exit/kill.
+- Stand-in video: 832x480, 18 fps. Live dimensions vary; clients must not assume a size. `RELAY_MAX_WIDTH` bounds JPEG width (default 1280), preserving aspect ratio. JPEG quality is 80 and the bridge targets at most 18 fps.
+- Orbis generation completion starts the next run while the world remains active. SDK/model errors are surfaced to clients. Live video inactivity for 90 seconds fails and closes the source.
 - The relay sends only the newest frame. If a socket is slow, drop frames; never queue them.
 - Stand-in frames show the topic, the frame number and the prompt in force, and move visibly from frame to frame. A steer shows up 1.8 seconds after it is received, to mimic Orbis.

@@ -9,10 +9,12 @@ dependencies = [
     "pillow>=10.1",
     "numpy",
     "python-dotenv",
+    "httpx",
 ]
 
 [project.optional-dependencies]
 live = ["reactor-sdk>=1.14.0"]
+speech = ["faster-whisper>=1.2.0"]
 
 [dependency-groups]
 dev = [

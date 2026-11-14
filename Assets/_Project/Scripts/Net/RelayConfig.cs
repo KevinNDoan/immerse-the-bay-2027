@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using UnityEngine;
 
 namespace Zap.Net
@@ -17,6 +18,35 @@ namespace Zap.Net
                 if (!string.IsNullOrEmpty(_baseUrl))
                 {
                     return _baseUrl;
+                }
+
+                // Let a development headset use USB forwarding or a new LAN address
+                // without rebuilding the APK. Release builds use the bundled address.
+                if (Debug.isDebugBuild || Application.isEditor)
+                {
+                    try
+                    {
+                        string path = Path.Combine(Application.persistentDataPath, "zap-relay-url.txt");
+                        if (File.Exists(path))
+                        {
+                            string candidate = File.ReadAllText(path).Trim();
+                            if (Uri.TryCreate(candidate, UriKind.Absolute, out var uri) &&
+                                (uri.Scheme == "http" || uri.Scheme == "https") &&
+                                !string.IsNullOrEmpty(uri.Host) && string.IsNullOrEmpty(uri.UserInfo) &&
+                                uri.AbsolutePath == "/" && string.IsNullOrEmpty(uri.Query) &&
+                                string.IsNullOrEmpty(uri.Fragment))
+                            {
+                                _baseUrl = candidate.TrimEnd('/');
+                                Debug.Log($"[RelayConfig] Development relay override: {_baseUrl}");
+                                return _baseUrl;
+                            }
+                            Debug.LogWarning("[RelayConfig] Ignoring invalid development relay URL.");
+                        }
+                    }
+                    catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+                    {
+                        Debug.LogWarning("[RelayConfig] Could not read development relay override; using bundled address.");
+                    }
                 }
 
                 var asset = Resources.Load<TextAsset>(ResourceFileName);

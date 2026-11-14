@@ -4,6 +4,8 @@
     "references": [
         "Zap.Net",
         "Zap.World",
+        "Zap.Constellation",
+        "Unity.XR.Interaction.Toolkit",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
     ],

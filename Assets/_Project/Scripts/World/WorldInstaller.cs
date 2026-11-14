@@ -10,6 +10,7 @@ namespace Zap.World
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         public static void Install()
         {
+            if (UnityEngine.SceneManagement.SceneManager.GetActiveScene().name != "Void") return;
             if (GameObject.Find(RootGameObjectName) != null)
             {
                 return;
@@ -22,11 +23,9 @@ namespace Zap.World
             root.AddComponent<DomeView>();
             root.AddComponent<WorldStream>();
             root.AddComponent<WorldSession>();
+            root.AddComponent<WorldAudio>();
 
-            if (Application.isEditor || Debug.isDebugBuild)
-            {
-                root.AddComponent<WorldDebugKeys>();
-            }
+            // ConstellationController owns product input; avoid duplicate debug steering.
         }
     }
 }

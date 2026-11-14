@@ -90,6 +90,9 @@ def test_world_stream_steer_timing_and_exit() -> None:
         socket.send_json({"t": "exit"})
         status, _ = _receive_until(socket, "status")
         assert status == {"t": "status", "state": "idle", "detail": ""}
+        world = client.app.state.world
+        assert world.source._task is None
+        assert all(peer.video_frames.empty() and peer.audio_frames.empty() for peer in world.clients)
         socket.send_json({"t": "ping"})
         pong, _ = _receive_until(socket, "pong")
         assert pong == {"t": "pong"}
@@ -100,4 +103,5 @@ def test_root_serves_judges_page_and_kill_is_idempotent() -> None:
         response = client.get("/")
         assert response.status_code == 200
         assert "ZAP! live world" in response.text
+        assert "message.state === 'idle'" in response.text
         assert client.post("/world/kill").json() == {"ok": True}

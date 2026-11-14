@@ -150,6 +150,8 @@ class ReactorSource:
             # https://docs.reactor.inc/sdk-reference/python/track.md
             audio.on_frame(self._receive_audio)
             # https://docs.reactor.inc/sdk-reference/python/reactor.md
+            reactor.on_error(self._receive_error)
+            # https://docs.reactor.inc/sdk-reference/python/reactor.md
             await reactor.connect()
         else:
             reactor = self._reactor
@@ -219,6 +221,9 @@ class ReactorSource:
         seq = self._audio_seq
         self._audio_seq += 1
         self._schedule(self._on_audio(frame.astype("<i2", copy=False).tobytes(), seq))
+
+    def _receive_error(self, error: Exception) -> None:
+        self._schedule(self._on_error(str(error)))
 
     def _schedule(self, awaitable: Awaitable[None]) -> None:
         if self._loop is None:

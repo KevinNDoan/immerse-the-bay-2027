@@ -26,7 +26,8 @@ STATIC_INDEX = Path(__file__).with_name("static") / "index.html"
 @dataclass(eq=False)
 class Client:
     websocket: WebSocket
-    frames: asyncio.Queue[bytes] = field(default_factory=lambda: asyncio.Queue(maxsize=1))
+    video_frames: asyncio.Queue[bytes] = field(default_factory=lambda: asyncio.Queue(maxsize=1))
+    audio_frames: asyncio.Queue[bytes] = field(default_factory=lambda: asyncio.Queue(maxsize=32))
     controls: asyncio.Queue[dict[str, Any]] = field(default_factory=asyncio.Queue)
 
 
@@ -55,18 +56,25 @@ class World:
             self.topic = topic
             self.prompt = prompt or topic
             self.latest_jpeg = None
+            for client in self.clients:
+                _clear_queue(client.video_frames)
+                _clear_queue(client.audio_frames)
             self.state = "connecting"
             await self._broadcast_control(self.status_message())
             try:
                 await self.source.start(topic, self.prompt, image)
             except Exception as exc:
+                source, self.source = self.source, None
                 self.state = "error"
                 self.detail = str(exc)
                 await self._broadcast_control(self.status_message())
+                if source is not None:
+                    await source.close()
                 raise
             self.state = "streaming"
             self.detail = ""
             await self._broadcast_control(self.status_message())
+            await self._broadcast_control({"t": "prompt", "text": self.prompt, "appliesAtSeq": 0})
 
     async def steer(self, kind: str, text: str) -> dict[str, Any]:
         async with self.lock:
@@ -83,6 +91,9 @@ class World:
         async with self.lock:
             if self.source is not None:
                 await self.source.stop()
+            for client in self.clients:
+                _clear_queue(client.video_frames)
+                _clear_queue(client.audio_frames)
             self.state = "idle"
             self.detail = ""
             await self._broadcast_control(self.status_message())
@@ -95,6 +106,9 @@ class World:
             source, self.source = self.source, None
             if source is not None:
                 await source.close()
+            for client in self.clients:
+                _clear_queue(client.video_frames)
+                _clear_queue(client.audio_frames)
             self.state = "idle"
             self.detail = ""
             await self._broadcast_control(self.status_message())
@@ -103,6 +117,8 @@ class World:
         client = Client(websocket)
         self.clients.add(client)
         await client.controls.put(self.status_message())
+        if self.prompt:
+            await client.controls.put({"t": "prompt", "text": self.prompt, "appliesAtSeq": 0})
         return client
 
     async def remove_client(self, client: Client) -> None:
@@ -115,17 +131,21 @@ class World:
             self.frame_version += 1
             self.frame_changed.notify_all()
         for client in tuple(self.clients):
-            _replace_queued(client.frames, message)
+            _replace_queued(client.video_frames, message)
 
     async def on_audio(self, pcm: bytes, seq: int) -> None:
         message = HEADER.pack(2, seq, time.monotonic_ns() // 1_000) + pcm
         for client in tuple(self.clients):
-            _replace_queued(client.frames, message)
+            _replace_queued(client.audio_frames, message)
 
     async def on_error(self, detail: str) -> None:
-        self.state = "error"
-        self.detail = detail
-        await self._broadcast_control(self.status_message())
+        async with self.lock:
+            source, self.source = self.source, None
+            self.state = "error"
+            self.detail = detail
+            await self._broadcast_control(self.status_message())
+            if source is not None:
+                await source.close()
 
     async def mjpeg(self) -> AsyncIterator[bytes]:
         seen = -1
@@ -269,14 +289,20 @@ async def _handle_message(world: World, client: Client, message: Any) -> None:
 async def _send_to_client(client: Client) -> None:
     while True:
         control = asyncio.create_task(client.controls.get())
-        frame = asyncio.create_task(client.frames.get())
-        done, pending = await asyncio.wait((control, frame), return_when=asyncio.FIRST_COMPLETED)
+        video = asyncio.create_task(client.video_frames.get())
+        audio = asyncio.create_task(client.audio_frames.get())
+        done, pending = await asyncio.wait(
+            (control, video, audio), return_when=asyncio.FIRST_COMPLETED
+        )
         for task in pending:
             task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
         if control in done:
             await client.websocket.send_json(control.result())
-        if frame in done:
-            await client.websocket.send_bytes(frame.result())
+        if video in done:
+            await client.websocket.send_bytes(video.result())
+        if audio in done:
+            await client.websocket.send_bytes(audio.result())
 
 
 def _replace_queued(queue: asyncio.Queue[bytes], value: bytes) -> None:
@@ -284,6 +310,12 @@ def _replace_queued(queue: asyncio.Queue[bytes], value: bytes) -> None:
         with contextlib.suppress(asyncio.QueueEmpty):
             queue.get_nowait()
     queue.put_nowait(value)
+
+
+def _clear_queue(queue: asyncio.Queue[bytes]) -> None:
+    while not queue.empty():
+        with contextlib.suppress(asyncio.QueueEmpty):
+            queue.get_nowait()
 
 
 def _string(message: dict[str, Any], name: str) -> str:

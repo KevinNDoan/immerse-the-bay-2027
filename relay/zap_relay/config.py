@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
 DEFAULT_MODEL = "reactor/visko-orbis-stable"
 DEFAULT_PORT = 8787
+SETTING_NAMES = ("ORBIS_MODE", "REACTOR_API_KEY", "ORBIS_MODEL", "RELAY_PORT")
 
 
 @dataclass(frozen=True)
@@ -27,7 +28,8 @@ class Settings:
 def load_settings(env_file: Path | None = None) -> Settings:
     """Read settings. Refuse live mode when REACTOR_API_KEY is empty."""
     path = ENV_PATH if env_file is None else env_file
-    load_dotenv(path, override=False)
+    if not all(name in os.environ for name in SETTING_NAMES):
+        load_dotenv(path, override=False)
 
     mode = _text("ORBIS_MODE", "standin")
     api_key = _text("REACTOR_API_KEY", "")

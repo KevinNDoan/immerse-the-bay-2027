@@ -39,17 +39,21 @@
     const input = document.querySelector('#steer');
     const send = document.querySelector('#send');
     let socket;
+    let startedDemo = false;
 
     function connect() {
       const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
       socket = new WebSocket(`${scheme}://${location.host}/ws/world`);
-      socket.addEventListener('open', () => {
-        socket.send(JSON.stringify({t: 'enter', nodeId: 'judges', topic: 'ZAP! demo world', prompt: '', image: ''}));
-      });
       socket.addEventListener('message', event => {
         if (typeof event.data !== 'string') return;
         const message = JSON.parse(event.data);
-        if (message.t === 'status') status.textContent = message.state;
+        if (message.t === 'status') {
+          status.textContent = message.state;
+          if (message.state === 'idle' && !startedDemo) {
+            startedDemo = true;
+            socket.send(JSON.stringify({t: 'enter', nodeId: 'judges', topic: 'ZAP! demo world', prompt: '', image: ''}));
+          }
+        }
         if (message.t === 'prompt') prompt.textContent = message.text;
         if (message.t === 'error') status.textContent = `error: ${message.detail}`;
       });

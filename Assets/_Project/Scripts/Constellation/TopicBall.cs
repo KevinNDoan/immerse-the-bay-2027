@@ -3,6 +3,7 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.XR.Interaction.Toolkit;
 using UnityEngine.XR.Interaction.Toolkit.Interactables;
+using Zap.Core;
 
 namespace Zap.Constellation
 {
@@ -46,15 +47,12 @@ namespace Zap.Constellation
             Destroy(orb.GetComponent<Collider>());
             _orb = orb.transform;
             _orb.SetParent(transform, false);
-            _orb.localScale = Vector3.one * .11f;
+            _orb.localScale = Vector3.one * ZapTheme.Current.nodeDiameter;
             orb.GetComponent<Renderer>().sharedMaterial = material;
             var note = new GameObject("Topic note");
             note.transform.SetParent(transform, false);
             _note = note.AddComponent<TextMeshPro>();
-            _note.fontSize = .38f;
             _note.alignment = TextAlignmentOptions.Top;
-            _note.color = Color.white;
-            _note.rectTransform.sizeDelta = new Vector2(.62f, .35f);
             _note.rectTransform.pivot = new Vector2(.5f, 1f);
             _note.overflowMode = TextOverflowModes.Ellipsis;
             _note.richText = false;
@@ -82,14 +80,18 @@ namespace Zap.Constellation
         {
             var camera = Camera.main;
             if (Data == null || camera == null) return;
-            _orb.localScale = Vector3.one * (_selected ? .125f : .11f);
+            var theme = ZapTheme.Current;
+            _orb.localScale = Vector3.one * (_selected ? theme.nodeSelectedDiameter : theme.nodeDiameter);
             var distance = Vector3.Distance(transform.position, camera.transform.position);
-            _note.transform.position = transform.position + Vector3.down * .09f;
+            _note.transform.position = transform.position + Vector3.down * theme.noteOffsetBelowNode;
             _note.transform.rotation = Quaternion.LookRotation(_note.transform.position - camera.transform.position);
-            bool showSummary = (Grab.isSelected || (_selected && distance < .85f)) && !string.IsNullOrEmpty(Data.summary);
+            _note.rectTransform.sizeDelta = theme.noteBoxSize;
+            _note.color = theme.textColor;
+            if (theme.font != null) _note.font = theme.font;
+            bool showSummary = (Grab.isSelected || (_selected && distance < theme.summaryShowDistance)) && !string.IsNullOrEmpty(Data.summary);
             _note.text = showSummary ? Data.topic + "\n" + Data.summary : Data.topic;
-            _note.fontSize = showSummary ? .24f : .38f;
-            _note.gameObject.SetActive(distance < 4);
+            _note.fontSize = showSummary ? theme.summaryTextSize : theme.topicTextSize;
+            _note.gameObject.SetActive(distance < theme.noteHideDistance);
             if (Grab.isSelected && !_entered && Time.unscaledTime - _heldSince > .8f && distance < .26f)
             {
                 if (_nearFaceSince < 0) _nearFaceSince = Time.unscaledTime;

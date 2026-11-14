@@ -211,6 +211,22 @@ namespace Zap.Constellation
             return 150 - index * 60;
         }
 
+        public bool TryKeep(Collider collider)
+        {
+            if (collider == null) return false;
+            for (int i = 0; i < _stars.Length; i++)
+            {
+                var star = _stars[i];
+                if (star == null || !star.Root.activeInHierarchy) continue;
+                if (collider == star.Collider || collider.transform.IsChildOf(star.Root.transform))
+                {
+                    Keep(i);
+                    return true;
+                }
+            }
+            return false;
+        }
+
         private void Keep(int index)
         {
             if (index < 0 || index >= _topics.Length || _cachedSource == null) return;

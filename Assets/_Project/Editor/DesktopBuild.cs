@@ -22,13 +22,24 @@ namespace ImmerseTheBay.Editor
                 Zap.EditorTools.ZapSceneBuilder.BuildVoidScene();
 
             Directory.CreateDirectory("Builds/Desktop");
-            var report = BuildPipeline.BuildPlayer(new BuildPlayerOptions
+            // The desktop app is built with Mono because the IL2CPP module for Mac is not installed, and the shared setting is restored afterwards.
+            var previousBackend = PlayerSettings.GetScriptingBackend(NamedBuildTarget.Standalone);
+            PlayerSettings.SetScriptingBackend(NamedBuildTarget.Standalone, ScriptingImplementation.Mono2x);
+            BuildReport report;
+            try
             {
-                scenes = new[] { Zap.EditorTools.ZapSceneBuilder.VoidScenePath },
-                target = BuildTarget.StandaloneOSX,
-                locationPathName = "Builds/Desktop/ZAP.app",
-                options = BuildOptions.Development,
-            });
+                report = BuildPipeline.BuildPlayer(new BuildPlayerOptions
+                {
+                    scenes = new[] { Zap.EditorTools.ZapSceneBuilder.VoidScenePath },
+                    target = BuildTarget.StandaloneOSX,
+                    locationPathName = "Builds/Desktop/ZAP.app",
+                    options = BuildOptions.Development,
+                });
+            }
+            finally
+            {
+                PlayerSettings.SetScriptingBackend(NamedBuildTarget.Standalone, previousBackend);
+            }
 
             if (report.summary.result != BuildResult.Succeeded)
                 throw new BuildFailedException($"Desktop build failed: {report.summary.result} ({report.summary.totalErrors} errors).");

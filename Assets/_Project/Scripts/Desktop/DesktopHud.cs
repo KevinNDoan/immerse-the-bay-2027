@@ -13,21 +13,29 @@ namespace Zap.Desktop
         private const string WorldHint = "Arrows: move and look · Space: event · Esc: back · Hold V: speak";
         private const string ConstellationPlaceholder = "Type a topic and press Enter";
         private const string WorldPlaceholder = "Ask to see something and press Enter";
+        private const float DeleteConfirmSeconds = 3f;
 
         private ConstellationController _controller;
         private TextMeshProUGUI _worldTopic;
+        private TextMeshProUGUI _constellationName;
         private TextMeshProUGUI _status;
         private TextMeshProUGUI _sideTopic;
         private TextMeshProUGUI _sideSummary;
         private TextMeshProUGUI _hint;
+        private TextMeshProUGUI _deleteLabel;
         private TMP_InputField _topicInput;
         private TMP_InputField _editInput;
         private Button _backButton;
         private Button _enterButton;
         private Button _editButton;
+        private Button _deleteButton;
+        private GameObject _canvasObject;
         private GameObject _backObject;
         private GameObject _sidePanel;
         private GameObject _editObject;
+        private Image _topPanel;
+        private TopicBall _deleteArmedFor;
+        private float _deleteConfirmUntil;
         private bool _lastBusy;
         private bool _lastInWorld;
         private bool _hasState;
@@ -41,6 +49,8 @@ namespace Zap.Desktop
 
         private void Update()
         {
+            DesktopUi.SetActive(_canvasObject, !ZapPlatform.IsMenuOpen);
+
             if (_controller == null)
             {
                 _controller = FindAnyObjectByType<ConstellationController>();
@@ -56,24 +66,29 @@ namespace Zap.Desktop
             var current = _controller.Current;
             bool showSide = current != null && !inWorld;
 
-            SetActive(_backObject, inWorld);
-            SetActive(_worldTopic.gameObject, inWorld);
-            SetActive(_sidePanel, showSide);
-            if (!showSide) SetActive(_editObject, false);
+            DesktopUi.SetActive(_backObject, inWorld);
+            DesktopUi.SetActive(_worldTopic.gameObject, inWorld);
+            DesktopUi.SetActive(_sidePanel, showSide);
+            if (!showSide) DesktopUi.SetActive(_editObject, false);
 
-            SetText(_worldTopic, inWorld && current != null ? current.Data.topic : string.Empty);
-            SetText(_status, _controller.IsListening ? "Listening…" : _controller.Status);
-            SetText(_hint, inWorld ? WorldHint : ConstellationHint);
+            DesktopUi.SetText(_worldTopic, inWorld && current != null ? current.Data.topic : string.Empty);
+            DesktopUi.SetText(_constellationName, _controller.ConstellationName);
+            DesktopUi.SetText(_status, _controller.IsListening ? "Listening…" : _controller.Status);
+            DesktopUi.SetText(_hint, inWorld ? WorldHint : ConstellationHint);
             if (showSide)
             {
-                SetText(_sideTopic, current.Data.topic);
-                SetText(_sideSummary, current.Data.summary);
+                DesktopUi.SetText(_sideTopic, current.Data.topic);
+                DesktopUi.SetText(_sideSummary, current.Data.summary);
             }
+
+            if (_deleteArmedFor != null && (current != _deleteArmedFor || Time.unscaledTime >= _deleteConfirmUntil))
+                ClearDeleteConfirm();
 
             if (!_hasState || inWorld != _lastInWorld)
             {
+                _topPanel.enabled = inWorld;
                 var placeholder = (TextMeshProUGUI)_topicInput.placeholder;
-                SetText(placeholder, inWorld ? WorldPlaceholder : ConstellationPlaceholder);
+                DesktopUi.SetText(placeholder, inWorld ? WorldPlaceholder : ConstellationPlaceholder);
                 _lastInWorld = inWorld;
             }
 
@@ -84,6 +99,7 @@ namespace Zap.Desktop
                 _backButton.interactable = !busy;
                 _enterButton.interactable = !busy;
                 _editButton.interactable = !busy;
+                _deleteButton.interactable = !busy;
                 _lastBusy = busy;
             }
 
@@ -99,61 +115,74 @@ namespace Zap.Desktop
         private void BuildCanvas()
         {
             var theme = ZapTheme.Current;
-            var canvasObject = new GameObject("Desktop HUD", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
-            canvasObject.transform.SetParent(transform, false);
+            _canvasObject = new GameObject("Desktop HUD", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
+            _canvasObject.transform.SetParent(transform, false);
 
-            var canvas = canvasObject.GetComponent<Canvas>();
+            var canvas = _canvasObject.GetComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            var scaler = canvasObject.GetComponent<CanvasScaler>();
+            var scaler = _canvasObject.GetComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1920f, 1080f);
             scaler.matchWidthOrHeight = .5f;
 
-            var top = CreatePanel("Top left", canvasObject.transform, theme);
-            SetRect(top.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(20f, -92f), new Vector2(700f, 72f));
-            var logo = CreateText("Logo", top.transform, "ZAP!", 36f, TextAlignmentOptions.MidlineLeft, theme);
-            SetRect(logo.rectTransform, new Vector2(0f, .5f), new Vector2(0f, .5f), new Vector2(18f, 0f), new Vector2(110f, 56f));
-            _worldTopic = CreateText("World topic", top.transform, string.Empty, 24f, TextAlignmentOptions.MidlineLeft, theme);
-            SetRect(_worldTopic.rectTransform, new Vector2(0f, .5f), new Vector2(0f, .5f), new Vector2(128f, 0f), new Vector2(400f, 48f));
-            _backButton = CreateButton("Back", top.transform, "Back", theme);
-            SetRect((RectTransform)_backButton.transform, new Vector2(1f, .5f), new Vector2(1f, .5f), new Vector2(-70f, 0f), new Vector2(112f, 44f));
+            _topPanel = DesktopUi.CreatePanel("Top left", _canvasObject.transform, theme);
+            DesktopUi.SetRect(_topPanel.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(510f, -56f), new Vector2(980f, 72f));
+            var homeButton = DesktopUi.CreateButton("Home", _topPanel.transform, "ZAP!", theme);
+            DesktopUi.SetRect((RectTransform)homeButton.transform, new Vector2(0f, .5f), new Vector2(0f, .5f), new Vector2(73f, 0f), new Vector2(110f, 56f));
+            var homeLabel = homeButton.GetComponentInChildren<TextMeshProUGUI>();
+            homeLabel.fontSize = 36f;
+            homeLabel.alignment = TextAlignmentOptions.MidlineLeft;
+            homeButton.onClick.AddListener(ShowHome);
+            _constellationName = DesktopUi.CreateText("Constellation name", _topPanel.transform, string.Empty, 20f, TextAlignmentOptions.MidlineLeft, theme);
+            _constellationName.color = new Color(1f, 1f, 1f, .7f);
+            DesktopUi.SetRect(_constellationName.rectTransform, new Vector2(0f, .5f), new Vector2(0f, .5f), new Vector2(270f, 0f), new Vector2(260f, 40f));
+            _worldTopic = DesktopUi.CreateText("World topic", _topPanel.transform, string.Empty, 24f, TextAlignmentOptions.MidlineLeft, theme);
+            DesktopUi.SetRect(_worldTopic.rectTransform, new Vector2(0f, .5f), new Vector2(0f, .5f), new Vector2(612f, 0f), new Vector2(400f, 48f));
+            _backButton = DesktopUi.CreateButton("Back", _topPanel.transform, "Back", theme);
+            DesktopUi.SetRect((RectTransform)_backButton.transform, new Vector2(1f, .5f), new Vector2(1f, .5f), new Vector2(-70f, 0f), new Vector2(112f, 44f));
             _backObject = _backButton.gameObject;
             _backButton.onClick.AddListener(LeaveWorld);
 
-            _topicInput = CreateInputField("Topic input", canvasObject.transform, ConstellationPlaceholder, theme);
-            SetRect((RectTransform)_topicInput.transform, new Vector2(.5f, 0f), new Vector2(.5f, 0f), new Vector2(0f, 56f), new Vector2(720f, 56f));
+            _topicInput = DesktopUi.CreateInputField("Topic input", _canvasObject.transform, ConstellationPlaceholder, theme);
+            DesktopUi.SetRect((RectTransform)_topicInput.transform, new Vector2(.5f, 0f), new Vector2(.5f, 0f), new Vector2(0f, 56f), new Vector2(720f, 56f));
             _topicInput.onSubmit.AddListener(SubmitTopic);
 
-            _status = CreateText("Status", canvasObject.transform, string.Empty, 20f, TextAlignmentOptions.Center, theme);
-            SetRect(_status.rectTransform, new Vector2(.5f, 0f), new Vector2(.5f, 0f), new Vector2(0f, 112f), new Vector2(900f, 34f));
+            _status = DesktopUi.CreateText("Status", _canvasObject.transform, string.Empty, 20f, TextAlignmentOptions.Center, theme);
+            DesktopUi.SetRect(_status.rectTransform, new Vector2(.5f, 0f), new Vector2(.5f, 0f), new Vector2(0f, 112f), new Vector2(900f, 34f));
 
-            _sidePanel = CreatePanel("Selected topic", canvasObject.transform, theme).gameObject;
-            SetRect((RectTransform)_sidePanel.transform, new Vector2(1f, .5f), new Vector2(1f, .5f), new Vector2(-200f, 0f), new Vector2(360f, 560f));
-            _sideTopic = CreateText("Topic", _sidePanel.transform, string.Empty, 28f, TextAlignmentOptions.TopLeft, theme);
-            SetRect(_sideTopic.rectTransform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0f, -52f), new Vector2(-40f, 64f));
-            _sideSummary = CreateText("Summary", _sidePanel.transform, string.Empty, 18f, TextAlignmentOptions.TopLeft, theme);
-            _sideSummary.enableWordWrapping = true;
+            _sidePanel = DesktopUi.CreatePanel("Selected topic", _canvasObject.transform, theme).gameObject;
+            DesktopUi.SetRect((RectTransform)_sidePanel.transform, new Vector2(1f, .5f), new Vector2(1f, .5f), new Vector2(-200f, 0f), new Vector2(360f, 560f));
+            _sideTopic = DesktopUi.CreateText("Topic", _sidePanel.transform, string.Empty, 28f, TextAlignmentOptions.TopLeft, theme);
+            DesktopUi.SetRect(_sideTopic.rectTransform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0f, -52f), new Vector2(-40f, 64f));
+            _sideSummary = DesktopUi.CreateText("Summary", _sidePanel.transform, string.Empty, 18f, TextAlignmentOptions.TopLeft, theme);
+            _sideSummary.textWrappingMode = TextWrappingModes.Normal;
             _sideSummary.overflowMode = TextOverflowModes.Ellipsis;
-            SetRect(_sideSummary.rectTransform, new Vector2(0f, 0f), new Vector2(1f, 1f), new Vector2(0f, 22f), new Vector2(-40f, -154f));
-            _enterButton = CreateButton("Enter world", _sidePanel.transform, "Enter world", theme);
-            SetRect((RectTransform)_enterButton.transform, new Vector2(0f, 0f), new Vector2(.5f, 0f), new Vector2(20f, 22f), new Vector2(-30f, 48f));
+            DesktopUi.SetRect(_sideSummary.rectTransform, new Vector2(0f, 0f), new Vector2(1f, 1f), new Vector2(0f, 63f), new Vector2(-40f, -236f));
+            _enterButton = DesktopUi.CreateButton("Enter world", _sidePanel.transform, "Enter world", theme);
+            DesktopUi.SetRect((RectTransform)_enterButton.transform, new Vector2(0f, 0f), new Vector2(.5f, 0f), new Vector2(20f, 80f), new Vector2(-30f, 48f));
             _enterButton.onClick.AddListener(EnterWorld);
-            _editButton = CreateButton("Edit", _sidePanel.transform, "Edit", theme);
-            SetRect((RectTransform)_editButton.transform, new Vector2(.5f, 0f), new Vector2(1f, 0f), new Vector2(10f, 22f), new Vector2(-40f, 48f));
+            _editButton = DesktopUi.CreateButton("Edit", _sidePanel.transform, "Edit", theme);
+            DesktopUi.SetRect((RectTransform)_editButton.transform, new Vector2(.5f, 0f), new Vector2(1f, 0f), new Vector2(10f, 80f), new Vector2(-40f, 48f));
             _editButton.onClick.AddListener(ShowEdit);
-            _editInput = CreateInputField("Edit input", _sidePanel.transform, "Describe the change and press Enter", theme);
-            SetRect((RectTransform)_editInput.transform, new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(20f, 84f), new Vector2(-40f, 52f));
+            _deleteButton = DesktopUi.CreateButton("Delete", _sidePanel.transform, "Delete", theme);
+            DesktopUi.SetRect((RectTransform)_deleteButton.transform, new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(20f, 22f), new Vector2(-40f, 48f));
+            _deleteLabel = _deleteButton.GetComponentInChildren<TextMeshProUGUI>();
+            _deleteButton.onClick.AddListener(DeleteCurrent);
+            _editInput = DesktopUi.CreateInputField("Edit input", _sidePanel.transform, "Describe the change and press Enter", theme);
+            DesktopUi.SetRect((RectTransform)_editInput.transform, new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(20f, 142f), new Vector2(-40f, 52f));
             _editObject = _editInput.gameObject;
             _editInput.onSubmit.AddListener(SubmitEdit);
 
-            _hint = CreateText("Controls", canvasObject.transform, ConstellationHint, 14f, TextAlignmentOptions.BottomLeft, theme);
+            _hint = DesktopUi.CreateText("Controls", _canvasObject.transform, ConstellationHint, 16f, TextAlignmentOptions.BottomLeft, theme);
             _hint.color = new Color(1f, 1f, 1f, .7f);
-            SetRect(_hint.rectTransform, new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(20f, 18f), new Vector2(920f, 30f));
+            DesktopUi.SetRect(_hint.rectTransform, new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(720f, 18f), new Vector2(1400f, 30f));
 
             _backObject.SetActive(false);
             _worldTopic.gameObject.SetActive(false);
             _sidePanel.SetActive(false);
             _editObject.SetActive(false);
+            _topPanel.enabled = false;
+            DesktopUi.SetActive(_canvasObject, !ZapPlatform.IsMenuOpen);
         }
 
         private void SubmitTopic(string value)
@@ -190,93 +219,39 @@ namespace Zap.Desktop
             if (_controller != null) _controller.LeaveWorld();
         }
 
+        private void ShowHome()
+        {
+            DesktopHome.Instance.Show();
+        }
+
+        private void DeleteCurrent()
+        {
+            if (_controller == null || _controller.Busy) return;
+            var current = _controller.Current;
+            if (current == null) return;
+            if (_deleteArmedFor == current && Time.unscaledTime < _deleteConfirmUntil)
+            {
+                ClearDeleteConfirm();
+                _controller.DeleteBall(current);
+                return;
+            }
+
+            _deleteArmedFor = current;
+            _deleteConfirmUntil = Time.unscaledTime + DeleteConfirmSeconds;
+            DesktopUi.SetText(_deleteLabel, "Click again to delete");
+        }
+
+        private void ClearDeleteConfirm()
+        {
+            _deleteArmedFor = null;
+            _deleteConfirmUntil = 0f;
+            DesktopUi.SetText(_deleteLabel, "Delete");
+        }
+
         private static void KeepFocus(TMP_InputField field)
         {
             field.Select();
             field.ActivateInputField();
-        }
-
-        private static Image CreatePanel(string name, Transform parent, ZapTheme theme)
-        {
-            var obj = new GameObject(name, typeof(RectTransform), typeof(Image));
-            obj.transform.SetParent(parent, false);
-            var image = obj.GetComponent<Image>();
-            var color = theme.voidColor;
-            color.a = .85f;
-            image.color = color;
-            return image;
-        }
-
-        private static TextMeshProUGUI CreateText(string name, Transform parent, string value, float size, TextAlignmentOptions alignment, ZapTheme theme)
-        {
-            var obj = new GameObject(name, typeof(RectTransform), typeof(TextMeshProUGUI));
-            obj.transform.SetParent(parent, false);
-            var text = obj.GetComponent<TextMeshProUGUI>();
-            text.text = value;
-            text.fontSize = size;
-            text.alignment = alignment;
-            text.color = Color.white;
-            text.raycastTarget = false;
-            text.richText = false;
-            if (theme.font != null) text.font = theme.font;
-            return text;
-        }
-
-        private static Button CreateButton(string name, Transform parent, string label, ZapTheme theme)
-        {
-            var image = CreatePanel(name, parent, theme);
-            var button = image.gameObject.AddComponent<Button>();
-            button.targetGraphic = image;
-            var text = CreateText("Label", image.transform, label, 18f, TextAlignmentOptions.Center, theme);
-            SetRect(text.rectTransform, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
-            return button;
-        }
-
-        private static TMP_InputField CreateInputField(string name, Transform parent, string placeholderValue, ZapTheme theme)
-        {
-            var image = CreatePanel(name, parent, theme);
-            var input = image.gameObject.AddComponent<TMP_InputField>();
-            input.targetGraphic = image;
-
-            var textArea = new GameObject("Text Area", typeof(RectTransform), typeof(RectMask2D));
-            textArea.transform.SetParent(image.transform, false);
-            var viewport = (RectTransform)textArea.transform;
-            SetRect(viewport, Vector2.zero, Vector2.one, new Vector2(18f, 8f), new Vector2(-36f, -16f));
-
-            var placeholder = CreateText("Placeholder", textArea.transform, placeholderValue, 20f, TextAlignmentOptions.MidlineLeft, theme);
-            placeholder.color = new Color(1f, 1f, 1f, .5f);
-            SetRect(placeholder.rectTransform, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
-
-            var text = CreateText("Text", textArea.transform, string.Empty, 20f, TextAlignmentOptions.MidlineLeft, theme);
-            SetRect(text.rectTransform, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
-
-            input.textViewport = viewport;
-            input.textComponent = text;
-            input.placeholder = placeholder;
-            input.lineType = TMP_InputField.LineType.SingleLine;
-            input.caretColor = Color.white;
-            input.selectionColor = new Color(1f, 1f, 1f, .25f);
-            return input;
-        }
-
-        private static void SetRect(RectTransform rect, Vector2 anchorMin, Vector2 anchorMax, Vector2 anchoredPosition, Vector2 sizeDelta)
-        {
-            rect.anchorMin = anchorMin;
-            rect.anchorMax = anchorMax;
-            rect.pivot = new Vector2(.5f, .5f);
-            rect.anchoredPosition = anchoredPosition;
-            rect.sizeDelta = sizeDelta;
-        }
-
-        private static void SetText(TMP_Text target, string value)
-        {
-            value ??= string.Empty;
-            if (target.text != value) target.text = value;
-        }
-
-        private static void SetActive(GameObject target, bool value)
-        {
-            if (target.activeSelf != value) target.SetActive(value);
         }
     }
 }

@@ -96,6 +96,39 @@ namespace Zap.World.Tests
         }
 
         [Test]
+        public void ConstellationLibraryCreatesListsAndUsesFallbackName()
+        {
+            string root = Path.Combine(Application.temporaryCachePath, "zap-constellation-library-" + Guid.NewGuid().ToString("N"));
+            string folder = Path.Combine(root, "constellations");
+            ConstellationLibrary.FolderOverride = folder;
+            try
+            {
+                var first = ConstellationLibrary.Create("First constellation");
+                var entries = ConstellationLibrary.List();
+                Assert.AreEqual(1, entries.Count);
+                Assert.AreEqual("First constellation", entries[0].name);
+                Assert.AreEqual(0, entries[0].topicCount);
+
+                var firstData = NodeStore.Load(first.path);
+                firstData.name = "";
+                firstData.updated = "2000-01-01T00:00:00.0000000Z";
+                NodeStore.Save(first.path, firstData);
+                var second = ConstellationLibrary.Create("Second constellation");
+
+                entries = ConstellationLibrary.List();
+                Assert.AreEqual(2, entries.Count);
+                Assert.AreEqual(second.id, entries[0].id);
+                Assert.AreEqual(first.id, entries[1].id);
+                Assert.AreEqual("Untitled", entries[1].name);
+            }
+            finally
+            {
+                ConstellationLibrary.FolderOverride = null;
+                if (Directory.Exists(root)) Directory.Delete(root, true);
+            }
+        }
+
+        [Test]
         public void VoiceWavIsMonoPcmAndDownmixesChannels()
         {
             var bytes = VoiceRecorder.EncodeWav(new[] { .5f, -.5f, 1f, 1f }, 16000, 2);
@@ -148,6 +181,32 @@ namespace Zap.World.Tests
                 Assert.That(ball.transform.position.y, Is.EqualTo(released.y).Within(.05f), "The thrown ball must not fall.");
             }
             finally { Object.Destroy(obj); Object.Destroy(hand); Object.Destroy(managerObject); Object.Destroy(material); }
+        }
+
+        [UnityTest]
+        public IEnumerator ConstellationControllerStartsWithoutInitializerErrors()
+        {
+            string root = Path.Combine(Application.temporaryCachePath, "zap-controller-start-" + Guid.NewGuid().ToString("N"));
+            string folder = Path.Combine(root, "constellations");
+            string previousLastOpenedId = ConstellationLibrary.LastOpenedId;
+            ConstellationLibrary.FolderOverride = folder;
+            var obj = new GameObject("Test constellation controller");
+            try
+            {
+                obj.AddComponent<ConstellationController>();
+                yield return null;
+                yield return null;
+                Object.Destroy(obj);
+                yield return null;
+                LogAssert.NoUnexpectedReceived();
+            }
+            finally
+            {
+                if (obj != null) Object.Destroy(obj);
+                ConstellationLibrary.FolderOverride = null;
+                ConstellationLibrary.LastOpenedId = previousLastOpenedId;
+                if (Directory.Exists(root)) Directory.Delete(root, true);
+            }
         }
     }
 }

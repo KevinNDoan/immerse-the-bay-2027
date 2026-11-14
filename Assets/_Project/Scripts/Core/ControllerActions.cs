@@ -29,7 +29,8 @@ namespace Zap.Core
             bool worldEvent = RightTrigger;
             var keyboard = Keyboard.current;
             // Typing a topic must not trigger the V, B, Enter, Escape, Space and arrow shortcuts.
-            if (keyboard != null && !ZapPlatform.IsTyping && (Application.isEditor || Debug.isDebugBuild || ZapPlatform.IsDesktop))
+            if (keyboard != null && !ZapPlatform.IsTyping && !ZapPlatform.IsMenuOpen
+                && (Application.isEditor || Debug.isDebugBuild || ZapPlatform.IsDesktop))
             {
                 CreateHeld |= keyboard.vKey.isPressed;
                 EditHeld |= keyboard.bKey.isPressed;

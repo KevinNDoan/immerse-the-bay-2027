@@ -66,7 +66,7 @@ namespace Zap.Core
         [Tooltip("Hint text size on the card.")]
         public float cardHintSize = .24f;
         [Tooltip("Controller hint text size.")]
-        public float hintTextSize = .16f;
+        public float hintTextSize = .12f;
         [Tooltip("Controller hint line width, in metres.")]
         public float hintLineWidth = .0015f;
         [Tooltip("Translucent background colour of the controls card.")]

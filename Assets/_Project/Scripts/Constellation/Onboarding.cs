@@ -7,6 +7,9 @@ namespace Zap.Constellation
     {
         public int Topics;
         public int Links;
+        // Running totals that only ever go up, so deleting a topic cannot undo progress.
+        public int Created;
+        public int LinkChanges;
         public bool Holding;
         public bool Pulling;
         public bool InWorld;
@@ -14,33 +17,26 @@ namespace Zap.Constellation
 
     public sealed class Onboarding : MonoBehaviour
     {
-        public const int StepCount = 8;
+        public const int StepCount = 4;
 
         private const string TutorialDoneKey = "zap.tutorialDone";
+        private const float SkipHoldSeconds = 0.7f;
         private const float RestartHoldSeconds = 1.5f;
 
         private static readonly string[] Titles =
         {
-            "Tutorial 1 of 8 · Make a topic",
-            "Tutorial 2 of 8 · Grab it",
-            "Tutorial 3 of 8 · Add another",
-            "Tutorial 4 of 8 · Link them",
-            "Tutorial 5 of 8 · Cut the link",
-            "Tutorial 6 of 8 · Move everything",
-            "Tutorial 7 of 8 · Step inside",
-            "Tutorial 8 of 8 · Look around"
+            "1 of 4 · Say a topic",
+            "2 of 4 · Move it",
+            "3 of 4 · Connect ideas",
+            "4 of 4 · Step inside"
         };
 
         private static readonly string[] Instructions =
         {
-            "Hold A on the right controller, say a topic, then let go.",
-            "Reach the topic, squeeze a grip to grab it, then throw it.",
-            "Hold A and say a second topic.",
-            "Point at one topic, hold the trigger, drag to the other, then let go.",
-            "Hold the trigger in empty space and sweep across the line.",
-            "Squeeze both grips in empty space and pull. Move your hands apart to stretch.",
-            "Point at a topic, then press X on the left controller.",
-            "Move and look with the sticks. Press Y to come back."
+            "Hold A and say a topic, like 'volcanoes'. Let go when you're done.",
+            "Squeeze the grip to pick it up. Let go to place it. Throw it to delete it.",
+            "Say another topic. To link or unlink two, tap them together.",
+            "Aim at a topic and press X to step inside. Press Y to come back."
         };
 
         private static readonly ControlHint[][] StepHints =
@@ -52,19 +48,10 @@ namespace Zap.Constellation
                 new ControlHint(ControlId.LeftGrip, "Grab", true)
             },
             new[] { new ControlHint(ControlId.RightA, "Hold and speak", true) },
-            new[] { new ControlHint(ControlId.RightTrigger, "Hold and drag", true) },
-            new[] { new ControlHint(ControlId.RightTrigger, "Hold and sweep", true) },
             new[]
             {
-                new ControlHint(ControlId.LeftGrip, "Squeeze", true),
-                new ControlHint(ControlId.RightGrip, "Squeeze", true)
-            },
-            new[] { new ControlHint(ControlId.LeftX, "Enter the topic", true) },
-            new[]
-            {
-                new ControlHint(ControlId.LeftStick, "Move", true),
-                new ControlHint(ControlId.RightStick, "Look", true),
-                new ControlHint(ControlId.LeftY, "Return", true)
+                new ControlHint(ControlId.LeftX, "Step inside", true),
+                new ControlHint(ControlId.LeftY, "Come back", true)
             }
         };
 
@@ -72,10 +59,10 @@ namespace Zap.Constellation
         {
             new ControlHint(ControlId.RightA, "Hold: new topic"),
             new ControlHint(ControlId.RightB, "Hold: change topic"),
-            new ControlHint(ControlId.RightGrip, "Grab"),
-            new ControlHint(ControlId.RightTrigger, "Link or cut"),
-            new ControlHint(ControlId.LeftGrip, "Grab"),
-            new ControlHint(ControlId.LeftX, "Enter topic"),
+            new ControlHint(ControlId.RightGrip, "Grab · throw to delete"),
+            new ControlHint(ControlId.LeftGrip, "Grab · throw to delete"),
+            new ControlHint(ControlId.RightTrigger, "Aim and drag: link"),
+            new ControlHint(ControlId.LeftX, "Step inside"),
             new ControlHint(ControlId.LeftStick, "Hold: tutorial")
         };
 
@@ -94,9 +81,8 @@ namespace Zap.Constellation
         private ControllerHints _hints;
         private TutorialFacts _start;
         private bool _sawMiddle;
-        private bool _tutorialHeldLastFrame;
-        private bool _restartArmed = true;
-        private float _restartHeldFor;
+        private bool _holdArmed;
+        private float _heldFor;
 
         public bool Running { get; private set; }
         public int Step { get; private set; }
@@ -118,9 +104,10 @@ namespace Zap.Constellation
         public void Skip()
         {
             Running = false;
-            _restartArmed = false;
-            _restartHeldFor = 0f;
+            _holdArmed = false;
+            _heldFor = 0f;
             PlayerPrefs.SetInt(TutorialDoneKey, 1);
+            PlayerPrefs.Save();
             _controller.SetStatus("Tutorial skipped. Hold the left stick to see it again.");
         }
 
@@ -128,6 +115,7 @@ namespace Zap.Constellation
         {
             BeginTutorial();
             PlayerPrefs.SetInt(TutorialDoneKey, 0);
+            PlayerPrefs.Save();
         }
 
         public static bool Middle(int step, TutorialFacts start, TutorialFacts now)
@@ -135,8 +123,6 @@ namespace Zap.Constellation
             switch (step)
             {
                 case 1: return now.Holding;
-                case 5: return now.Pulling;
-                case 7: return now.InWorld;
                 default: return false;
             }
         }
@@ -145,14 +131,11 @@ namespace Zap.Constellation
         {
             switch (step)
             {
-                case 0: return now.Topics > start.Topics;
+                case 0: return now.Created > start.Created;
                 case 1: return sawMiddle && !now.Holding;
-                case 2: return now.Topics > start.Topics;
-                case 3: return now.Links > start.Links;
-                case 4: return now.Links < start.Links;
-                case 5: return sawMiddle && !now.Pulling;
-                case 6: return now.InWorld;
-                case 7: return sawMiddle && !now.InWorld;
+                // Either half of the step counts: a new topic, or linking or unlinking two.
+                case 2: return now.Created > start.Created || now.LinkChanges > start.LinkChanges;
+                case 3: return now.InWorld;
                 default: return false;
             }
         }
@@ -163,47 +146,51 @@ namespace Zap.Constellation
 
             _input.Poll();
             bool tutorialHeld = _input.TutorialHeld;
-            bool freshPress = tutorialHeld && !_tutorialHeldLastFrame;
             if (!tutorialHeld)
             {
-                _restartArmed = true;
-                _restartHeldFor = 0f;
+                _holdArmed = true;
+                _heldFor = 0f;
             }
-
-            if (Running)
+            else if (!_holdArmed || _controller.InWorld)
             {
-                if (freshPress)
-                    Skip();
-                else
-                    UpdateTutorial();
+                _heldFor = 0f;
             }
-            else if (!_controller.InWorld && tutorialHeld && _restartArmed)
+            else if (Running)
             {
-                _restartHeldFor += Time.unscaledDeltaTime;
-                if (_restartHeldFor >= RestartHoldSeconds)
+                _heldFor += Time.unscaledDeltaTime;
+                if (_heldFor >= SkipHoldSeconds)
                 {
-                    _restartArmed = false;
-                    _restartHeldFor = 0f;
+                    _holdArmed = false;
+                    _heldFor = 0f;
+                    Skip();
+                }
+            }
+            else
+            {
+                _heldFor += Time.unscaledDeltaTime;
+                if (_heldFor >= RestartHoldSeconds)
+                {
+                    _holdArmed = false;
+                    _heldFor = 0f;
                     Restart();
                 }
             }
-            else if (_controller.InWorld)
-            {
-                _restartHeldFor = 0f;
-            }
+
+            if (Running)
+                UpdateTutorial();
 
             if (Running)
                 _hints.Show(StepHints[Step], true);
             else
                 _hints.Show(_controller.InWorld ? WorldHints : VoidHints, false);
-
-            _tutorialHeldLastFrame = tutorialHeld;
         }
 
         private void BeginTutorial()
         {
             Step = 0;
             Running = true;
+            // The idle status repeats step 1's instruction, so start with the status line empty.
+            if (_controller != null) _controller.SetStatus(string.Empty);
             BeginStep();
         }
 
@@ -229,10 +216,11 @@ namespace Zap.Constellation
 
             Step = StepCount - 1;
             Running = false;
-            _restartArmed = false;
-            _restartHeldFor = 0f;
+            _holdArmed = false;
+            _heldFor = 0f;
             PlayerPrefs.SetInt(TutorialDoneKey, 1);
-            _controller.SetStatus("You're set. Hold the left stick to see the tutorial again.");
+            PlayerPrefs.Save();
+            _controller.SetStatus("That's it! Look at a controller to see its buttons.");
         }
 
         private TutorialFacts ReadFacts()
@@ -241,6 +229,8 @@ namespace Zap.Constellation
             {
                 Topics = _controller.Balls.Count,
                 Links = _controller.LinkCount,
+                Created = _controller.TopicsCreated,
+                LinkChanges = _controller.LinkChanges,
                 Holding = _controller.IsHolding,
                 Pulling = _controller.IsPulling,
                 InWorld = _controller.InWorld

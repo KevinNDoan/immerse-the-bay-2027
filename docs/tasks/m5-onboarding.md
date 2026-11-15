@@ -2,6 +2,17 @@
 
 Updated 2026-11-14. Read `AGENTS.md`, `docs/tasks/m4-start-in-front.md` and `docs/tasks/m4-controls-card.md` first. Core-lane work on the branch `core/app`.
 
+## Changed after review (2026-11-14)
+
+- Steps 3 and 4 swapped: step 3 is `Cut the link`, step 4 is `Link them`. A new topic already links to the selected one, so linking first would have removed that link and stalled the tutorial. Step 2's instruction says so.
+- Step 3 is skipped when no link exists as it begins. Step 4 is done when the link count changes in either direction.
+- Skip needs the left stick held for 0.7 seconds and is ignored inside a world. A single click was too easy to trigger by accident. A stick already held at start does not count.
+- Titles are `<n> of 8 · <title>`. The tutorial clears the status line when it starts.
+- `PlayerPrefs.Save()` follows every write.
+- `ControllerHints` restores a renderer's own property block when a highlight ends, and searches only for parts a shown hint uses. `hintTextSize` default is .12.
+- `HomeFrame`: the 8 second wait for presence is measured from when presence was first seen false and cannot be extended by later requests. Subscribed input subsystems are tracked in their own list.
+- Where the sections below disagree with this list, this list wins.
+
 ## Goal
 
 Feedback from the headset:
@@ -49,7 +60,7 @@ public bool TutorialHeld;   // left thumbstick pressed in; Backspace in the Edit
 
 ```csharp
 public float cardStepSize = .34f;
-public float hintTextSize = .16f;
+public float hintTextSize = .12f;
 public float hintLineWidth = .0015f;
 public Color hintHighlightColor = Color.white;
 ```
@@ -97,7 +108,7 @@ public sealed class Onboarding : MonoBehaviour
     public static Onboarding Create(ConstellationController controller, ControllerHints hints);
     public bool Running { get; }
     public int Step { get; }          // 0-based
-    public string Title { get; }      // "Tutorial 2 of 8 · Grab it", or null when not running
+    public string Title { get; }      // "2 of 8 · Grab it", or null when not running
     public string Text { get; }       // the instruction, or null when not running
     public void Skip();
     public void Restart();
@@ -126,7 +137,8 @@ Steps, 0-based. `Middle` is false where the column is empty.
 | 6 | Step inside | Point at a topic, then press X on the left controller. | LeftX `Enter the topic` | | `now.InWorld` |
 | 7 | Look around | Move and look with the sticks. Press Y to come back. | LeftStick `Move`, RightStick `Look`, LeftY `Return` | `now.InWorld` | `!now.InWorld` |
 
-- `Title` is `Tutorial <n> of 8 · <step title>` with `n` 1-based. Build the eight strings once.
+- `Title` is `<n> of 8 · <step title>` with `n` 1-based (a longer title is cut off on the card). Build the eight strings once.
+- When the tutorial starts or restarts, set the controller's status to empty: the idle status repeats step 1.
 - Remembered with `PlayerPrefs` key `zap.tutorialDone` (int). `Create` starts the tutorial when it is 0.
 - Each `Update`: read the facts from the controller (`Balls.Count`, `LinkCount`, `IsHolding`, `IsPulling`, `InWorld`); when a step begins store them as `start` and clear `sawMiddle`; set `sawMiddle` when `Middle` holds; move on when `Done` holds. After step 7: stop, set the pref to 1, and `controller.SetStatus("You're set. Hold the left stick to see the tutorial again.")`.
 - Own one `ControllerActions` and `Poll()` it each `Update`.

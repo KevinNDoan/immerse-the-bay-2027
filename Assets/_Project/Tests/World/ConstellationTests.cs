@@ -4,8 +4,6 @@ using System.IO;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
-using UnityEngine.XR.Interaction.Toolkit;
-using UnityEngine.XR.Interaction.Toolkit.Interactors;
 using Zap.Constellation;
 using Zap.Core;
 using Object = UnityEngine.Object;
@@ -175,17 +173,13 @@ namespace Zap.World.Tests
                 new TutorialFacts(),
                 new TutorialFacts(),
                 new TutorialFacts(),
-                new TutorialFacts(),
-                new TutorialFacts { Links = 1 },
-                new TutorialFacts(),
-                new TutorialFacts(),
-                new TutorialFacts { InWorld = true }
+                new TutorialFacts()
             };
 
             for (int step = 0; step < Onboarding.StepCount; step++)
                 Assert.IsFalse(Onboarding.Done(step, starts[step], starts[step], false), "Step " + step + " advanced without its action.");
 
-            Assert.IsTrue(Onboarding.Done(0, starts[0], new TutorialFacts { Topics = 1 }, false));
+            Assert.IsTrue(Onboarding.Done(0, starts[0], new TutorialFacts { Created = 1 }, false));
 
             var holding = new TutorialFacts { Holding = true };
             Assert.IsTrue(Onboarding.Middle(1, starts[1], holding));
@@ -193,22 +187,36 @@ namespace Zap.World.Tests
             Assert.IsFalse(Onboarding.Done(1, starts[1], starts[1], false));
             Assert.IsTrue(Onboarding.Done(1, starts[1], starts[1], true));
 
-            Assert.IsTrue(Onboarding.Done(2, starts[2], new TutorialFacts { Topics = 1 }, false));
-            Assert.IsTrue(Onboarding.Done(3, starts[3], new TutorialFacts { Links = 1 }, false));
-            Assert.IsTrue(Onboarding.Done(4, starts[4], new TutorialFacts { Links = 0 }, false));
+            Assert.IsTrue(Onboarding.Done(2, starts[2], new TutorialFacts { Created = 1 }, false));
+            Assert.IsTrue(Onboarding.Done(2, starts[2], new TutorialFacts { LinkChanges = 1 }, false), "Linking two topics should also finish step 3.");
+            // The bug this guards: a topic thrown away after the step began lowers the count, and one new topic must still finish the step.
+            var afterThrow = new TutorialFacts { Topics = 3, Created = 5 };
+            Assert.IsTrue(Onboarding.Done(2, afterThrow, new TutorialFacts { Topics = 3, Created = 6 }, false));
+            Assert.IsFalse(Onboarding.Done(2, afterThrow, new TutorialFacts { Topics = 2, Created = 5 }, false));
+            Assert.IsTrue(Onboarding.Done(3, starts[3], new TutorialFacts { InWorld = true }, false));
+        }
 
-            var pulling = new TutorialFacts { Pulling = true };
-            Assert.IsTrue(Onboarding.Middle(5, starts[5], pulling));
-            Assert.IsFalse(Onboarding.Done(5, starts[5], pulling, true));
-            Assert.IsFalse(Onboarding.Done(5, starts[5], starts[5], false));
-            Assert.IsTrue(Onboarding.Done(5, starts[5], starts[5], true));
+        [Test]
+        public void TopicBallTossThreshold()
+        {
+            Assert.IsFalse(TopicBall.IsToss(new Vector3(0f, 0f, TopicBall.TossSpeed - .1f)));
+            Assert.IsTrue(TopicBall.IsToss(new Vector3(0f, 0f, TopicBall.TossSpeed)));
+        }
 
-            var inWorld = new TutorialFacts { InWorld = true };
-            Assert.IsTrue(Onboarding.Done(6, starts[6], inWorld, false));
-            Assert.IsTrue(Onboarding.Middle(7, starts[7], inWorld));
-            Assert.IsFalse(Onboarding.Done(7, starts[7], inWorld, true));
-            Assert.IsFalse(Onboarding.Done(7, starts[7], new TutorialFacts(), false));
-            Assert.IsTrue(Onboarding.Done(7, starts[7], new TutorialFacts(), true));
+        [Test]
+        public void LinkAimPicksTheNearestWithinTheCone()
+        {
+            var positions = new[]
+            {
+                Vector3.forward,
+                Quaternion.AngleAxis(5f, Vector3.up) * Vector3.forward * 2f,
+                Quaternion.AngleAxis(30f, Vector3.up) * Vector3.forward
+            };
+
+            Assert.AreEqual(0, LinkAim.Nearest(positions, Vector3.zero, Vector3.forward, 14f, 6f, -1));
+            Assert.AreEqual(1, LinkAim.Nearest(positions, Vector3.zero, Vector3.forward, 14f, 6f, 0));
+            Assert.AreEqual(-1, LinkAim.Nearest(positions, Vector3.zero, Vector3.forward, 2f, 6f, 0));
+            Assert.AreEqual(-1, LinkAim.Nearest(new[] { Vector3.forward * 7f }, Vector3.zero, Vector3.forward, 14f, 6f, -1));
         }
 
         [UnityTest]
@@ -238,47 +246,42 @@ namespace Zap.World.Tests
         }
 
         [UnityTest]
-        public IEnumerator GrabReleaseTransfersThrowVelocityAndBallFloats()
+        public IEnumerator ReleasedTopicStaysPutAndTossedTopicIsRemoved()
         {
-            var managerObject = new GameObject("Test interaction manager");
-            managerObject.AddComponent<XRInteractionManager>();
-            var hand = new GameObject("Test hand");
-            hand.transform.position = Vector3.up * 1.5f;
-            var collider = hand.AddComponent<SphereCollider>(); collider.isTrigger = true; collider.radius = .1f;
-            var body = hand.AddComponent<Rigidbody>(); body.isKinematic = true; body.useGravity = false;
-            var interactor = hand.AddComponent<XRDirectInteractor>();
-            var obj = new GameObject("Test topic"); obj.transform.position = hand.transform.position;
-            var ball = obj.AddComponent<TopicBall>();
+            var placedObject = new GameObject("Placed topic");
+            placedObject.transform.position = Vector3.up * 1.5f;
+            var placed = placedObject.AddComponent<TopicBall>();
+            var tossedObject = new GameObject("Tossed topic");
+            tossedObject.transform.position = Vector3.up * 1.5f;
+            var tossed = tossedObject.AddComponent<TopicBall>();
             var material = new Material(Shader.Find("Zap/Solid"));
-            ball.Initialize(new NodeData { topic = "Volcanoes" }, material);
-            ball.Grab.attachEaseInTime = 0;
             try
             {
-                yield return null;
-                interactor.StartManualInteraction((UnityEngine.XR.Interaction.Toolkit.Interactables.IXRSelectInteractable)ball.Grab);
-                Assert.IsTrue(ball.Grab.isSelected);
-                float start = Time.time;
-                while (Time.time - start < .4f)
-                {
-                    hand.transform.position += Vector3.forward * (1.6f * Time.deltaTime);
-                    yield return null;
-                }
-                Assert.IsTrue(ball.Grab.isSelected, "Selection must persist throughout the throw gesture.");
-                interactor.EndManualInteraction();
-                yield return new WaitForFixedUpdate();
-                yield return null;
-                Assert.IsFalse(ball.Grab.isSelected);
-                Assert.IsFalse(ball.Body.isKinematic);
-                Assert.IsFalse(ball.Body.useGravity);
-                Assert.Greater(ball.Body.linearVelocity.z, .2f, "Release should carry controller motion into the throw.");
-                float speed = ball.Body.linearVelocity.magnitude;
-                Vector3 released = ball.transform.position;
-                yield return new WaitForSeconds(1.5f);
-                Assert.Greater(ball.transform.position.z, released.z + .1f);
-                Assert.Less(ball.Body.linearVelocity.magnitude, speed);
-                Assert.That(ball.transform.position.y, Is.EqualTo(released.y).Within(.05f), "The thrown ball must not fall.");
+                placed.Initialize(new NodeData { topic = "Volcanoes" }, material);
+                placed.Release(new Vector3(0f, 0f, .5f));
+                Assert.IsFalse(placed.IsTossed);
+                Assert.AreEqual(RigidbodyConstraints.FreezeAll, placed.Body.constraints);
+                Assert.AreEqual(Vector3.zero, placed.Body.linearVelocity);
+                Vector3 released = placed.transform.position;
+                yield return new WaitForSeconds(.3f);
+                Assert.That(Vector3.Distance(placed.transform.position, released), Is.LessThan(1e-4f));
+
+                bool tossRaised = false;
+                tossed.Initialize(new NodeData { topic = "Comets" }, material);
+                tossed.Tossed += _ => tossRaised = true;
+                tossed.Release(new Vector3(0f, 0f, 4f));
+                Assert.IsTrue(tossRaised, "The Tossed event should fire before Release returns.");
+                Assert.IsTrue(tossed.IsTossed);
+                float deadline = Time.realtimeSinceStartup + 1.5f;
+                while (tossed != null && Time.realtimeSinceStartup < deadline) yield return null;
+                Assert.IsTrue(tossed == null, "The tossed topic should destroy itself after shrinking.");
             }
-            finally { Object.Destroy(obj); Object.Destroy(hand); Object.Destroy(managerObject); Object.Destroy(material); }
+            finally
+            {
+                if (placedObject != null) Object.Destroy(placedObject);
+                if (tossedObject != null) Object.Destroy(tossedObject);
+                if (material != null) Object.Destroy(material);
+            }
         }
 
         [UnityTest]

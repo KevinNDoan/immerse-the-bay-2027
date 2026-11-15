@@ -23,12 +23,13 @@ namespace Zap.Core
         static HomeFrame _instance;
 
         readonly List<XRInputSubsystem> _inputSubsystems = new List<XRInputSubsystem>();
+        readonly List<XRInputSubsystem> _subscribed = new List<XRInputSubsystem>();
         Transform _rig;
         Transform _head;
         Vector3 _samplePosition;
         Quaternion _sampleRotation;
         float _requestedAt;
-        float _presenceUntil;
+        float _absentSince = -1f;
         float _nextSubscribeAt;
         bool _pending;
         bool _sampled;
@@ -76,7 +77,6 @@ namespace Zap.Core
             if (_instance == null) return;
             _instance._pending = true;
             _instance._requestedAt = Time.unscaledTime;
-            _instance._presenceUntil = _instance._requestedAt + PresenceWait;
             _instance._provisional = false;
             _instance._sampled = false;
         }
@@ -91,14 +91,14 @@ namespace Zap.Core
 
         void OnDestroy()
         {
-            for (var i = 0; i < _inputSubsystems.Count; i++)
+            for (var i = 0; i < _subscribed.Count; i++)
             {
-                var subsystem = _inputSubsystems[i];
+                var subsystem = _subscribed[i];
                 if (subsystem != null)
                     subsystem.trackingOriginUpdated -= OnTrackingOriginUpdated;
             }
 
-            _inputSubsystems.Clear();
+            _subscribed.Clear();
             if (_instance == this) _instance = null;
         }
 
@@ -118,25 +118,29 @@ namespace Zap.Core
             var head = InputDevices.GetDeviceAtXRNode(XRNode.Head);
             bool present = false;
             bool known = head.isValid && head.TryGetFeatureValue(UnityEngine.XR.CommonUsages.userPresence, out present);
-            if (known)
+            if (known && present)
             {
-                if (present)
+                _absentSince = -1f;
+                if (_headWasOff)
                 {
-                    if (_headWasOff)
-                    {
-                        _headWasOff = false;
-                        Request();
-                    }
+                    _headWasOff = false;
+                    Request();
                 }
-                else
+            }
+            else if (known)
+            {
+                _headWasOff = true;
+                if (_absentSince < 0f)
+                    _absentSince = Time.unscaledTime;
+                if (Time.unscaledTime - _absentSince < PresenceWait)
                 {
-                    _headWasOff = true;
-                    if (Time.unscaledTime < _presenceUntil)
-                    {
-                        _requestedAt = Time.unscaledTime;
-                        return;
-                    }
+                    _requestedAt = Time.unscaledTime;
+                    return;
                 }
+            }
+            else
+            {
+                _absentSince = -1f;
             }
 
             if (!_pending && !_provisional) return;
@@ -190,13 +194,21 @@ namespace Zap.Core
 
         void SubscribeInputs()
         {
+            for (var i = 0; i < _subscribed.Count; i++)
+            {
+                var subsystem = _subscribed[i];
+                if (subsystem != null)
+                    subsystem.trackingOriginUpdated -= OnTrackingOriginUpdated;
+            }
+
+            _subscribed.Clear();
             SubsystemManager.GetSubsystems(_inputSubsystems);
             for (var i = 0; i < _inputSubsystems.Count; i++)
             {
                 var subsystem = _inputSubsystems[i];
                 if (subsystem == null) continue;
-                subsystem.trackingOriginUpdated -= OnTrackingOriginUpdated;
                 subsystem.trackingOriginUpdated += OnTrackingOriginUpdated;
+                _subscribed.Add(subsystem);
             }
         }
 

@@ -134,6 +134,61 @@ namespace Zap.EditorTools
             return changed;
         }
 
+        public const string SkyMaterialPath = "Assets/_Project/Materials/ZapSky.mat";
+        // Unity's six-sided skybox: +Z front, -Z back, -X left, +X right, +Y up, -Y down.
+        private static readonly (string property, string file)[] SkyFaces =
+        {
+            ("_FrontTex", "sky_front.png"), ("_BackTex", "sky_back.png"),
+            ("_LeftTex", "sky_left.png"), ("_RightTex", "sky_right.png"),
+            ("_UpTex", "sky_up.png"), ("_DownTex", "sky_down.png"),
+        };
+
+        [MenuItem("ZAP/Build Sky")]
+        public static void BuildSkyMenu() => BuildSky(false);
+
+        /// <summary>
+        /// Builds the six-sided sky material from Art/Sky and sets it as the theme's skybox.
+        /// Returns true if anything changed.
+        /// </summary>
+        public static bool BuildSky(bool onlyMissing)
+        {
+            var theme = AssetDatabase.LoadAssetAtPath<ZapTheme>(ThemeAssetPath);
+            if (theme == null) return false;
+            var material = AssetDatabase.LoadAssetAtPath<Material>(SkyMaterialPath);
+            if (material != null && onlyMissing && theme.skybox == material && theme.skyPanorama != null) return false;
+
+            var faces = new Texture2D[SkyFaces.Length];
+            for (int i = 0; i < SkyFaces.Length; i++)
+            {
+                faces[i] = AssetDatabase.LoadAssetAtPath<Texture2D>(ZapArtImporter.SkyFolder + SkyFaces[i].file);
+                if (faces[i] == null) { Debug.LogWarning($"ZAP sky: {SkyFaces[i].file} is missing from {ZapArtImporter.SkyFolder}."); return false; }
+            }
+
+            var shader = Shader.Find("Skybox/6 Sided");
+            if (shader == null) { Debug.LogError("ZAP sky: shader Skybox/6 Sided not found."); return false; }
+            if (material == null)
+            {
+                EnsureFolder("Assets/_Project/Materials");
+                material = new Material(shader) { name = "ZapSky" };
+                AssetDatabase.CreateAsset(material, SkyMaterialPath);
+            }
+            material.shader = shader;
+            for (int i = 0; i < SkyFaces.Length; i++) material.SetTexture(SkyFaces[i].property, faces[i]);
+            material.SetColor("_Tint", new Color(.5f, .5f, .5f, .5f)); // neutral: shows the images as drawn
+            material.SetFloat("_Exposure", 1f);
+            material.SetFloat("_Rotation", 0f);
+            EditorUtility.SetDirty(material);
+            AssetDatabase.SaveAssetIfDirty(material);
+
+            theme.skybox = material;
+            var panorama = AssetDatabase.LoadAssetAtPath<Texture2D>(ZapArtImporter.SkyFolder + "sky_panorama.png");
+            if (panorama != null) theme.skyPanorama = panorama;
+            EditorUtility.SetDirty(theme);
+            AssetDatabase.SaveAssetIfDirty(theme);
+            Debug.Log($"ZAP sky: {SkyMaterialPath} built from Art/Sky and set as the theme skybox.");
+            return true;
+        }
+
         private static bool Assign(ref Texture2D slot, string path, bool onlyEmpty)
         {
             if (onlyEmpty && slot != null) return false;

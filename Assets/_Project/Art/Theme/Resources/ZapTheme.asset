@@ -19,6 +19,8 @@ MonoBehaviour:
   textColor: {r: 1, g: 1, b: 1, a: 1}
   paper: {r: 0.9490196, g: 0.9411765, b: 0.96862745, a: 1}
   ink: {r: 0.043137256, g: 0.03137255, b: 0.078431375, a: 1}
+  skybox: {fileID: 2100000, guid: 24bef11ac8a6be44f8f79c5e1dda37df, type: 2}
+  skyAmbient: {r: 0.8, g: 0.81, b: 0.84, a: 1}
   nodeDiameter: 0.11
   nodeSelectedDiameter: 0.125
   noteOffsetBelowNode: 0.09
@@ -34,6 +36,7 @@ MonoBehaviour:
   suggestedTextSize: 0.2
   suggestedTextColor: {r: 1, g: 1, b: 1, a: 0.7}
   controlsDistance: 1.2
+  controlsMinDistanceFromFace: 0.6
   controlsDropBelowEyes: 0.1
   cardSize: {x: 0.56, y: 0.41}
   cardCompactSize: {x: 0.56, y: 0.31}
@@ -50,6 +53,7 @@ MonoBehaviour:
   cardTextColor: {r: 0.83, g: 0.82, b: 0.86, a: 1}
   cardDimTextColor: {r: 0.83, g: 0.82, b: 0.86, a: 0.6}
   hintHighlightColor: {r: 1, g: 1, b: 1, a: 1}
+  useStarNodeArt: 0
   starCoreDiameter: 0.032
   starGlowScale: 4
   starRingScale: 2

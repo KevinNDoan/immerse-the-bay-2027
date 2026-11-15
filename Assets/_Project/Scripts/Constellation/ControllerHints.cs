@@ -138,7 +138,8 @@ namespace Zap.Constellation
             text.rectTransform.pivot = new Vector2(left ? 1f : 0f, .5f);
             text.rectTransform.sizeDelta = new Vector2(.48f, _theme.hintTextSize * .125f);
             text.fontSize = _theme.hintTextSize;
-            text.color = _theme.cardTextColor;
+            // Ink on the light sky with the glass look; the old light text on the dark void otherwise.
+            text.color = _theme.useFrostedGlass ? _theme.glassTextColor : _theme.cardTextColor;
             text.text = string.Empty;
             if (_theme.font != null) text.font = _theme.font;
 

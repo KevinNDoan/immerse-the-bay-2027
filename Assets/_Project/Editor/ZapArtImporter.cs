@@ -18,10 +18,25 @@ namespace Zap.EditorTools
         private static bool IsArt(string path) =>
             path.StartsWith(FxFolder, StringComparison.Ordinal) || path.StartsWith(UiFolder, StringComparison.Ordinal);
 
+        public const string SkyFolder = "Assets/_Project/Art/Sky/";
+
         private void OnPreprocessTexture()
         {
             // Only on first import, so later changes in the Inspector are kept.
-            if (!IsArt(assetPath) || !assetImporter.importSettingsMissing) return;
+            if (!assetImporter.importSettingsMissing) return;
+            if (assetPath.StartsWith(SkyFolder, StringComparison.Ordinal))
+            {
+                // Sky faces: opaque, clamped so the cube seams do not bleed, full size.
+                var sky = (TextureImporter)assetImporter;
+                sky.textureType = TextureImporterType.Default;
+                sky.alphaSource = TextureImporterAlphaSource.None;
+                sky.npotScale = TextureImporterNPOTScale.None;
+                sky.mipmapEnabled = true;
+                sky.maxTextureSize = 2048;
+                sky.wrapMode = TextureWrapMode.Clamp;
+                return;
+            }
+            if (!IsArt(assetPath)) return;
             var importer = (TextureImporter)assetImporter;
             bool fx = assetPath.StartsWith(FxFolder, StringComparison.Ordinal);
             importer.textureType = TextureImporterType.Default;
@@ -47,6 +62,8 @@ namespace Zap.EditorTools
             if (imported.Any(p => p.StartsWith(ZapThemeAssetBuilder.FontFolder, StringComparison.Ordinal)
                                   && p.EndsWith(".ttf", StringComparison.OrdinalIgnoreCase)))
                 EditorApplication.delayCall += () => ZapThemeAssetBuilder.BuildFontAssets(true);
+            if (imported.Any(p => p.StartsWith(SkyFolder, StringComparison.Ordinal) && p.EndsWith(".png", StringComparison.OrdinalIgnoreCase)))
+                EditorApplication.delayCall += () => ZapThemeAssetBuilder.BuildSky(true);
         }
     }
 }

@@ -16,6 +16,7 @@ namespace Zap.Constellation
         readonly Transform[] _outline = new Transform[4];
 
         ZapTheme _theme;
+        FrostPanel _frost;
         Transform _panel;
         Transform _levelBar;
         TextMeshPro _title;
@@ -120,7 +121,7 @@ namespace Zap.Constellation
             _outlineMaterial = new Material(solidShader);
             _outlineMaterial.SetColor("_BaseColor", _theme.cardOutlineColor);
             _barMaterial = new Material(solidShader);
-            _barMaterial.SetColor("_BaseColor", _theme.cardTextColor);
+            _barMaterial.SetColor("_BaseColor", TextColor);
 
             _panel = CreateQuad("Panel", _panelMaterial, PanelZ);
             _outline[0] = CreateQuad("Outline top", _outlineMaterial, SurfaceZ);
@@ -129,10 +130,18 @@ namespace Zap.Constellation
             _outline[3] = CreateQuad("Outline right", _outlineMaterial, SurfaceZ);
             _levelBar = CreateQuad("Level bar", _barMaterial, SurfaceZ);
 
-            _title = CreateText("Title", _theme.cardTitleSize, _theme.cardTextColor, 1);
-            _step = CreateText("Step", _theme.cardStepSize, _theme.cardTextColor, 3);
-            _status = CreateText("Status", _theme.cardStatusSize, _theme.cardTextColor, 3);
-            _hint = CreateText("Hint", _theme.cardHintSize, _theme.cardDimTextColor, 2);
+            // Frosted glass replaces the dark panel and its outline bars when the theme turns it on.
+            _frost = FrostPanel.Create(transform, "Frosted panel", new Vector3(0f, 0f, PanelZ));
+            if (_frost != null)
+            {
+                _panel.gameObject.SetActive(false);
+                foreach (var edge in _outline) edge.gameObject.SetActive(false);
+            }
+
+            _title = CreateText("Title", _theme.cardTitleSize, TextColor, 1);
+            _step = CreateText("Step", _theme.cardStepSize, TextColor, 3);
+            _status = CreateText("Status", _theme.cardStatusSize, TextColor, 3);
+            _hint = CreateText("Hint", _theme.cardHintSize, DimTextColor, 2);
             _title.textWrappingMode = TextWrappingModes.NoWrap;
 
             ApplyLayout(true);
@@ -140,6 +149,9 @@ namespace Zap.Constellation
             _levelBar.gameObject.SetActive(false);
             _built = true;
         }
+
+        Color TextColor => _frost != null ? _theme.glassTextColor : _theme.cardTextColor;
+        Color DimTextColor => _frost != null ? _theme.glassDimTextColor : _theme.cardDimTextColor;
 
         Transform CreateQuad(string objectName, Material material, float z)
         {
@@ -179,7 +191,7 @@ namespace Zap.Constellation
 
             _step.gameObject.SetActive(!compact);
             _status.maxVisibleLines = compact ? 3 : 2;
-            _status.color = compact ? _theme.cardTextColor : _theme.cardDimTextColor;
+            _status.color = compact ? TextColor : DimTextColor;
             Layout(size, compact);
 
             AlignToHomeFrame();
@@ -188,6 +200,7 @@ namespace Zap.Constellation
         void ResizeFrame(Vector2 size)
         {
             _panel.localScale = new Vector3(size.x, size.y, 1f);
+            if (_frost != null) _frost.SetSize(size);
             var edge = _theme.cardOutlineWidth;
             _outline[0].localPosition = new Vector3(0f, size.y * .5f - edge * .5f, SurfaceZ);
             _outline[0].localScale = new Vector3(size.x, edge, 1f);

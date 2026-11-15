@@ -13,7 +13,6 @@ namespace Zap.Desktop
         private const string WorldHint = "Arrows: move and look · Space: event · Esc: back · Hold V: speak";
         private const string ConstellationPlaceholder = "Type a topic and press Enter";
         private const string WorldPlaceholder = "Ask a question or request an object, then press Enter";
-        private const float DeleteConfirmSeconds = 3f;
 
         private ConstellationController _controller;
         private TextMeshProUGUI _worldTopic;
@@ -21,7 +20,6 @@ namespace Zap.Desktop
         private TextMeshProUGUI _sideTopic;
         private TextMeshProUGUI _sideSummary;
         private TextMeshProUGUI _hint;
-        private TextMeshProUGUI _deleteLabel;
         private TMP_InputField _topicInput;
         private TMP_InputField _editInput;
         private Button _backButton;
@@ -34,8 +32,6 @@ namespace Zap.Desktop
         private GameObject _sidePanel;
         private GameObject _editObject;
         private Image _topPanel;
-        private TopicBall _deleteArmedFor;
-        private float _deleteConfirmUntil;
         private bool _lastBusy;
         private bool _lastInWorld;
         private bool _hasState;
@@ -82,8 +78,6 @@ namespace Zap.Desktop
                 DesktopUi.SetText(_sideSummary, current.Data.summary);
             }
 
-            if (_deleteArmedFor != null && (current != _deleteArmedFor || Time.unscaledTime >= _deleteConfirmUntil))
-                ClearDeleteConfirm();
 
             if (!_hasState || inWorld != _lastInWorld)
             {
@@ -173,7 +167,6 @@ namespace Zap.Desktop
             _editButton.onClick.AddListener(ShowEdit);
             _deleteButton = DesktopUi.CreateButton("Delete", _sidePanel.transform, "Delete", theme);
             DesktopUi.SetRect((RectTransform)_deleteButton.transform, new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(20f, 22f), new Vector2(-40f, 48f));
-            _deleteLabel = _deleteButton.GetComponentInChildren<TextMeshProUGUI>();
             _deleteButton.onClick.AddListener(DeleteCurrent);
             _editInput = DesktopUi.CreateInputField("Edit input", _sidePanel.transform, "Describe the change and press Enter", theme);
             DesktopUi.SetRect((RectTransform)_editInput.transform, new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(20f, 142f), new Vector2(-40f, 52f));
@@ -246,23 +239,7 @@ namespace Zap.Desktop
             if (_controller == null || _controller.Busy) return;
             var current = _controller.Current;
             if (current == null) return;
-            if (_deleteArmedFor == current && Time.unscaledTime < _deleteConfirmUntil)
-            {
-                ClearDeleteConfirm();
-                _controller.DeleteBall(current);
-                return;
-            }
-
-            _deleteArmedFor = current;
-            _deleteConfirmUntil = Time.unscaledTime + DeleteConfirmSeconds;
-            DesktopUi.SetText(_deleteLabel, "Click again to delete");
-        }
-
-        private void ClearDeleteConfirm()
-        {
-            _deleteArmedFor = null;
-            _deleteConfirmUntil = 0f;
-            DesktopUi.SetText(_deleteLabel, "Delete");
+            _controller.DeleteBall(current);
         }
 
         private static void KeepFocus(TMP_InputField field)

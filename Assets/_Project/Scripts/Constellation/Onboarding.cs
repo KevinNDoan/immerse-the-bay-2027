@@ -63,6 +63,7 @@ namespace Zap.Constellation
             new ControlHint(ControlId.LeftGrip, "Grab · throw to travel"),
             new ControlHint(ControlId.RightTrigger, "Aim and drag: link"),
             new ControlHint(ControlId.LeftX, "Step inside"),
+            new ControlHint(ControlId.LeftY, "Delete selected idea…"),
             new ControlHint(ControlId.LeftStick, "Hold: tutorial")
         };
 
@@ -81,6 +82,11 @@ namespace Zap.Constellation
         };
 
         private static readonly ControlHint[] TravelHints = { new ControlHint(ControlId.LeftY, "Return to map") };
+        private static readonly ControlHint[] DeleteHints =
+        {
+            new ControlHint(ControlId.LeftX, "Confirm delete", true),
+            new ControlHint(ControlId.LeftY, "Keep idea", true)
+        };
         private static readonly ControlHint[] CancelHints = { new ControlHint(ControlId.LeftY, "Cancel request", true) };
 
         private readonly ControllerActions _input = new ControllerActions();
@@ -186,7 +192,9 @@ namespace Zap.Constellation
             if (Running)
                 UpdateTutorial();
 
-            if (_controller.CanCancelVoice)
+            if (_controller.PendingDeletion != null)
+                _hints.Show(DeleteHints, false);
+            else if (_controller.CanCancelVoice)
                 _hints.Show(CancelHints, false);
             else if (_controller.IsTravelling)
                 _hints.Show(TravelHints, false);

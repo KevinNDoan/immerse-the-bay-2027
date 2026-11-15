@@ -42,6 +42,25 @@ namespace Zap.World.Tests
         }
 
         [UnityTest]
+        public IEnumerator WorldThrowSurvivesVelocityLostAfterDetach()
+        {
+            using var fixture = new GrabFixture();
+            fixture.ball.SetWorldTravelHint(true);
+            int requests = 0;
+            fixture.ball.EnterRequested += _ => requests++;
+            // Simulate a room collision immediately after XRI detaches the orb.
+            ((TravelGrabInteractable)fixture.ball.Grab).Detached += _ => fixture.ball.Body.linearVelocity = Vector3.zero;
+            yield return null;
+            fixture.Begin();
+            yield return fixture.MoveHand(2.6f);
+            fixture.hand.EndManualInteraction();
+            yield return new WaitForFixedUpdate(); yield return null; yield return null;
+            Assert.AreEqual(1, requests, "A room collision must not swallow a valid throw.");
+            Assert.Greater(fixture.ball.LastThrowVelocity.magnitude, 1.35f);
+            Assert.IsFalse(fixture.ball.IsTossed, "Travel must never discard a node.");
+        }
+
+        [UnityTest]
         public IEnumerator GentleReleaseAndCanceledSelectionDoNotTravel()
         {
             using var fixture = new GrabFixture();

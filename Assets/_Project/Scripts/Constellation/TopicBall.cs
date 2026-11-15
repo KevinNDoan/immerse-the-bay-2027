@@ -8,17 +8,11 @@ using Zap.Core;
 
 namespace Zap.Constellation
 {
-    [RequireComponent(typeof(Rigidbody), typeof(SphereCollider), typeof(XRGrabInteractable))]
+    [RequireComponent(typeof(Rigidbody), typeof(SphereCollider), typeof(TravelGrabInteractable))]
     public sealed class TopicBall : MonoBehaviour
     {
         public const float TossSpeed = 2.5f;
         private const float HighlightScale = 1.25f;
-        // Compact note exports: 16 Figma px of shadow padding plus a 6 px corner, at 4x.
-        private const float CompactNoteBorderPixels = 88f;
-        private const float CompactNoteInset = 64f / ZapArt.PixelsPerMetre;
-        // Expanded note exports: a 6 px corner at 4x, no padding.
-        private const float ExpandedNoteBorderPixels = 24f;
-
         public NodeData Data { get; private set; }
         public XRGrabInteractable Grab { get; private set; }
         public Rigidbody Body { get; private set; }
@@ -33,16 +27,14 @@ namespace Zap.Constellation
         private TextMeshPro _note;
         private Transform _orb;
         private Transform _star;
-        private SpriteRenderer _core, _glow, _ring, _sparks, _orbit, _paper;
+        private SpriteRenderer _core, _glow, _ring, _sparks, _orbit;
         private SpriteRenderer[] _layers = Array.Empty<SpriteRenderer>();
-        private string _paperText;
-        private float _paperFontSize;
-        private Vector2 _paperBox;
-        private Bounds _textBounds;
         private bool _selected, _draft;
         public bool HasWorldTravelHint { get; private set; }
         private float _heldSince;
-        private int _releaseVersion;
+        private bool _releasePending, _travelPending;
+        private float _releasedAfter;
+        private Vector3 _releaseFromHead, _releaseGaze, _releaseVelocity;
         private float _scale = .15f;
         private string _previewImage;
         private float _tossedAt;
@@ -59,7 +51,8 @@ namespace Zap.Constellation
             Body.interpolation = RigidbodyInterpolation.Interpolate;
             Body.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
             GetComponent<SphereCollider>().radius = .085f;
-            Grab = GetComponent<XRGrabInteractable>();
+            Grab = GetComponent<TravelGrabInteractable>();
+            ((TravelGrabInteractable)Grab).Detached += CaptureRelease;
             Grab.movementType = XRBaseInteractable.MovementType.VelocityTracking;
             Grab.throwOnDetach = true;
             Grab.forceGravityOnDetach = false;
@@ -87,9 +80,6 @@ namespace Zap.Constellation
             _note.fontSize = theme.topicTextSize;
             _note.rectTransform.sizeDelta = theme.noteBoxSize;
             _note.color = theme.textColor;
-            // The paper sits behind the text; the text faces away from its forward axis.
-            _paper = ZapArt.Layer(note.transform, "Note paper", theme.noteBackground, 0, CompactNoteBorderPixels);
-            if (_paper != null) _paper.transform.localPosition = new Vector3(0, 0, .001f);
             Refresh();
         }
 
@@ -144,7 +134,7 @@ namespace Zap.Constellation
         {
             Body.constraints = RigidbodyConstraints.None;
             _heldSince = Time.unscaledTime;
-            _releaseVersion++;
+            _releasePending = _travelPending = false;
             LastThrowVelocity = Vector3.zero;
             Selected?.Invoke(this);
             Grabbed?.Invoke(this);
@@ -153,20 +143,21 @@ namespace Zap.Constellation
         {
             // Disabling a node during travel must never start another journey.
             if (args.isCanceled || !isActiveAndEnabled || IsTossed) return;
-            StartCoroutine(CheckRelease(++_releaseVersion, Time.unscaledTime - _heldSince));
+            _releasePending = Camera.main != null;
+            _releasedAfter = Time.unscaledTime - _heldSince;
+            if (_releasePending)
+            {
+                _releaseFromHead = transform.position - Camera.main.transform.position;
+                _releaseGaze = Camera.main.transform.forward;
+            }
         }
 
-        private IEnumerator CheckRelease(int version, float heldSeconds)
+        private void CaptureRelease(Vector3 velocity)
         {
-            // XRI applies detach velocity after selectExited, at the end of its update.
-            yield return new WaitForFixedUpdate();
-            yield return null;
-            if (version != _releaseVersion || Grab.isSelected || IsTossed || Camera.main == null) yield break;
-            var head = Camera.main.transform;
-            var velocity = Body.linearVelocity;
-            if (!IsTravelThrow(velocity, transform.position-head.position, head.forward, heldSeconds)) yield break;
-            LastThrowVelocity = velocity;
-            EnterRequested?.Invoke(this);
+            // Capture XRI's actual detach velocity before room collisions or locomotion can change it.
+            _travelPending = _releasePending && IsTravelThrow(velocity, _releaseFromHead, _releaseGaze, _releasedAfter);
+            _releaseVelocity = velocity;
+            _releasePending = false;
         }
 
         public static bool IsTravelThrow(Vector3 velocity, Vector3 fromHead, Vector3 gaze, float heldSeconds)
@@ -177,7 +168,7 @@ namespace Zap.Constellation
                 && Vector3.Dot(velocity.normalized, gaze.normalized) > .2f;
         }
 
-        private void OnDisable() { _releaseVersion++; StopAllCoroutines(); }
+        private void OnDisable() { _releasePending = _travelPending = false; }
 
         public static bool IsToss(Vector3 releaseVelocity)
         {
@@ -197,7 +188,7 @@ namespace Zap.Constellation
                 return;
             }
 
-            _releaseVersion++;
+            _releasePending = _travelPending = false;
             IsTossed = true;
             Tossed?.Invoke(this);
             Body.constraints = RigidbodyConstraints.None;
@@ -219,6 +210,17 @@ namespace Zap.Constellation
 
         private void LateUpdate()
         {
+            // Dispatch outside XRI's detach callback: travel may deactivate/reparent this ball.
+            if (_travelPending)
+            {
+                _travelPending = false;
+                if (!Grab.isSelected && !IsTossed)
+                {
+                    LastThrowVelocity = _releaseVelocity;
+                    EnterRequested?.Invoke(this);
+                    if (!isActiveAndEnabled) return;
+                }
+            }
             if (IsTossed)
             {
                 float progress = Mathf.Clamp01((Time.unscaledTime - _tossedAt) / .5f);
@@ -249,14 +251,14 @@ namespace Zap.Constellation
             _note.transform.position = transform.position + Vector3.down * Mathf.Max(theme.noteOffsetBelowNode, _scale * .5f + .04f);
             _note.transform.rotation = Quaternion.LookRotation(_note.transform.position - camera.transform.position);
             UpdateNoteBox(theme);
-            _note.color = _paper != null ? theme.ink : theme.textColor;
+            _note.color = theme.textColor;
             if (theme.font != null) _note.font = theme.font;
             bool showSummary = (held || (_selected && distance < theme.summaryShowDistance)) && !string.IsNullOrEmpty(Data.summary);
             _note.text = showSummary ? Data.topic + "\n" + Data.summary : Data.topic;
             if (HasWorldTravelHint) _note.text += "\nPoint + X to enter · or grip and throw";
             _note.fontSize = showSummary || HasWorldTravelHint ? theme.summaryTextSize : theme.topicTextSize;
             _note.gameObject.SetActive(distance < theme.noteHideDistance);
-            if (_paper != null && _note.gameObject.activeSelf) UpdatePaper(theme, showSummary || HasWorldTravelHint, held);
+            _note.maxVisibleLines = HasWorldTravelHint ? 5 : showSummary ? 4 : 2;
         }
 
         private void UpdateStar(ZapTheme theme, Vector3 cameraPosition, bool held)
@@ -280,32 +282,5 @@ namespace Zap.Constellation
                 if (layer != null) layer.color = theme.nodeColor;
         }
 
-        private void UpdatePaper(ZapTheme theme, bool expanded, bool held)
-        {
-            expanded &= theme.noteExpanded != null;
-            Texture2D texture = expanded ? theme.noteExpanded
-                : held && theme.noteBackgroundHeld != null ? theme.noteBackgroundHeld
-                : _selected && theme.noteBackgroundPointed != null ? theme.noteBackgroundPointed
-                : theme.noteBackground;
-            var sprite = ZapArt.GetSprite(texture, expanded ? ExpandedNoteBorderPixels : CompactNoteBorderPixels);
-            if (_paper.sprite != sprite) _paper.sprite = sprite;
-            // Measure the text only when it changes.
-            if (_paperText != _note.text || _paperFontSize != _note.fontSize || _paperBox != _note.rectTransform.sizeDelta)
-            {
-                _note.ForceMeshUpdate();
-                _textBounds = _note.textInfo.characterCount > 0 ? _note.textBounds : new Bounds();
-                _paperText = _note.text;
-                _paperFontSize = _note.fontSize;
-                _paperBox = _note.rectTransform.sizeDelta;
-            }
-            var bounds = _textBounds;
-            float inset = expanded ? 0f : CompactNoteInset;
-            float pad = theme.notePadding + inset;
-            var size = new Vector2(bounds.size.x + 2 * pad, bounds.size.y + 2 * pad);
-            if (expanded) size.x = Mathf.Max(size.x, theme.noteExpandedMinWidth);
-            else size.x = size.y = Mathf.Max(size.x, size.y, theme.noteMinSize + 2 * inset);
-            _paper.size = size;
-            _paper.transform.localPosition = new Vector3(bounds.center.x, bounds.center.y, .001f);
-        }
     }
 }

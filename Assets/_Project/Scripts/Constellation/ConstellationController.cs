@@ -20,7 +20,7 @@ namespace Zap.Constellation
         public TopicBall WorldNode => _worldNode;
         public IReadOnlyList<TopicBall> Balls => _balls;
         public string Status { get; private set; } = "Hold A and say a topic. Let go to create it.";
-        public bool Busy => _busy;
+        public bool Busy => _busy || PendingDeletion != null;
         public bool CanCancelVoice => (_busy && !_preparingWorld) || _draftBall != null || (_voice != null && (_voice.IsRecording || _voice.IsStarting));
         private readonly List<TopicBall> _balls = new List<TopicBall>();
         private readonly List<NodeEdge> _edges = new List<NodeEdge>();
@@ -72,7 +72,8 @@ namespace Zap.Constellation
         private WorldControls _worldControls;
         private Transform _left, _right, _content, _branches;
         private Material _material, _lineMaterial;
-        private ControlsCard _card;
+        private ControlsCard _card, _deleteCard;
+        public TopicBall PendingDeletion { get; private set; }
         private ControllerHints _hints;
         private Onboarding _onboarding;
         private TopicBall _voiceTarget, _worldNode, _lineStart, _lineCandidate;
@@ -92,7 +93,7 @@ namespace Zap.Constellation
         private const float CutRange = 4f;
         private const string TutorialHint = "Hold the left stick to skip the tutorial";
         private const string WorldHint = "Left trigger: ask / create · A: new idea\nGrip: object / pane · B: edit · Y: map";
-        private const string VoidHint = "Look at a controller to see its buttons\nHold the left stick for the tutorial";
+        private const string VoidHint = "Point at an orb + Y: delete…\nGrip + throw or X: enter · A: new idea";
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Install()
@@ -171,6 +172,14 @@ namespace Zap.Constellation
             if (_voice == null || _world == null) return;
             FindControllers();
             _input.Poll();
+            if (PendingDeletion != null)
+            {
+                if (_input.ExitDown) CancelDeletion();
+                else if (_input.EnterDown) ConfirmDeletion();
+                _releaseBeforeVoice = true;
+                _recordButton = false;
+                return;
+            }
             bool voiceHeld = _input.CreateHeld || _input.EditHeld || _input.AskHeld;
             // Cancel wins even when Y and the voice-button release arrive in the same frame.
             bool cancelled = _input.ExitDown && CancelPendingVoice();
@@ -209,6 +218,8 @@ namespace Zap.Constellation
             _recordButton = voiceHeld;
             UpdateDraft();
             _world.GetComponent<WorldAudio>()?.SetMuted(_voice.IsRecording || _voice.IsStarting);
+            if (_input.ExitDown && !cancelled && !WorldActive && !CanCancelVoice)
+            { DeleteBall(Current); if (PendingDeletion != null) return; }
             if (_input.ExitDown && !cancelled && (InWorld || _preparingWorld || Travelling)) LeaveWorld();
             if (_input.EnterDown && !InWorld && !_preparingWorld && Current != null && !_busy) EnterWorld(Current);
             if (LoadingTimedOut)
@@ -371,7 +382,7 @@ namespace Zap.Constellation
 
         public void SubmitText(string text, bool edit)
         {
-            if (_busy || (_voice != null && (_voice.IsRecording || _voice.IsStarting)) || Travelling) return;
+            if (Busy || (_voice != null && (_voice.IsRecording || _voice.IsStarting)) || Travelling) return;
             if (edit && Current == null) { SetStatus("Select a ball first."); return; }
             StartCoroutine(ApplyText(text, edit ? "edit" : "create", InWorld ? (edit ? _branchSelection ?? _worldNode : _worldNode) : Current));
         }
@@ -488,7 +499,7 @@ namespace Zap.Constellation
 
         public void Open(string id)
         {
-            if (_busy || IsListening || WorldActive) return;
+            if (Busy || IsListening || WorldActive) return;
             var entry = ConstellationLibrary.Find(id);
             if (entry == null || entry.id == ConstellationId) return;
             if (!TrySave()) return;
@@ -500,16 +511,42 @@ namespace Zap.Constellation
 
         public void CreateAndOpen(string name)
         {
-            if (_busy || IsListening || WorldActive) return;
+            if (Busy || IsListening || WorldActive) return;
             if (!TrySave()) return;
             var entry = ConstellationLibrary.Create(name);
             Open(entry.id);
         }
 
+        // Every user-facing deletion first opens a confirmation for this exact node.
         public void DeleteBall(TopicBall ball)
         {
             if (_busy || IsListening || WorldActive || ball == null || !_balls.Contains(ball)) return;
+            PendingDeletion = ball;
+            ClearLinkDrag();
+            _pulling = _cutting = _tapLinkArmed = false;
+            if (_deleteCard == null) _deleteCard = ControlsCard.Create(transform);
+            _deleteCard.Visible = true;
+            _deleteCard.Show("DELETE IDEA?", ball.Data.topic,
+                "Remove this node and its links? Connected worlds are kept. This cannot be undone.",
+                "X: delete this node     Y: keep it", false, 0, false, true);
+            if (_card != null) _card.Visible = false;
+        }
+
+        public void CancelDeletion()
+        {
+            PendingDeletion = null;
+            if (_deleteCard != null) _deleteCard.Visible = false;
+            _releaseBeforeVoice = true;
+            SetStatus("Idea kept.");
+        }
+
+        public void ConfirmDeletion()
+        {
+            var ball = PendingDeletion;
+            CancelDeletion();
+            if (_busy || IsListening || WorldActive || ball == null || !_balls.Contains(ball)) return;
             RemoveFromModel(ball);
+            ball.gameObject.SetActive(false);
             Destroy(ball.gameObject);
         }
 
@@ -581,7 +618,7 @@ namespace Zap.Constellation
             ClearLinkDrag();
             _trigger = false;
             _cutting = false;
-            if (_world == null || _preparingWorld || _busy || Travelling || _voice.IsRecording || _voice.IsStarting || ball == null || ball.IsTossed || (InWorld && ball == _worldNode)) return;
+            if (PendingDeletion != null || _world == null || _preparingWorld || _busy || Travelling || _voice.IsRecording || _voice.IsStarting || ball == null || ball.IsTossed || (InWorld && ball == _worldNode)) return;
             string prompt = NodeContext.WorldPrompt(ball.Data, _balls.Select(b => b.Data));
             if (ball.Data.imageContext != "panorama-v2\n" + prompt)
             { ball.Data.image = ""; ball.Refresh(); }
@@ -590,7 +627,16 @@ namespace Zap.Constellation
             Vector3 fromHead = origin - Camera.main.transform.position;
             ball.Body.linearVelocity = Vector3.zero; ball.Body.angularVelocity = Vector3.zero;
             Texture preview = ball.Crystal.PreviewTexture;
-            if (InWorld) { LeaveWorld(); origin = Camera.main.transform.position + fromHead; }
+            if (InWorld)
+            {
+                // Leaving restores the map rig's position AND yaw. Preserve the throw relative to the viewer.
+                var head = Camera.main.transform;
+                var localOrigin = head.InverseTransformVector(fromHead);
+                var localDirection = head.InverseTransformDirection(direction);
+                LeaveWorld();
+                origin = head.position + head.TransformVector(localOrigin);
+                direction = head.TransformDirection(localDirection);
+            }
             _journey.Begin(origin, direction, preview);
             _worldNode = ball;
             _branchSelection = null;
@@ -1156,6 +1202,15 @@ namespace Zap.Constellation
 
         private void OnGUI()
         {
+            if (ZapPlatform.IsDesktop && PendingDeletion != null)
+            {
+                GUILayout.BeginArea(new Rect(Screen.width / 2f - 220, Screen.height / 2f - 100, 440, 200), GUI.skin.box);
+                GUILayout.Label("Delete “" + PendingDeletion.Data.topic + "”?");
+                GUILayout.Label("This removes this node and its links. Connected worlds are kept.");
+                if (GUILayout.Button("Keep idea")) CancelDeletion();
+                if (GUILayout.Button("Delete idea")) ConfirmDeletion();
+                GUILayout.EndArea();
+            }
             if (ZapPlatform.IsDesktop) return;
             if (!(Application.isEditor || Debug.isDebugBuild) || Application.platform == RuntimePlatform.Android || _voice == null) return;
             GUILayout.BeginArea(new Rect(16, 16, 440, 150), GUI.skin.box);

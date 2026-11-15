@@ -15,6 +15,55 @@ namespace Zap.World.Tests
 {
     public class ConstellationTests
     {
+        [UnityTest]
+        public IEnumerator NodeDeletionRequiresConfirmationAndPreservesChildrenOnDisk()
+        {
+            const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+            var root = new GameObject("Deletion test");
+            var controller = root.AddComponent<ConstellationController>(); controller.enabled = false;
+            var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".json");
+            typeof(ConstellationController).GetField("_savePath", flags).SetValue(controller, path);
+            TopicBall Make(string id, string[] parents)
+            {
+                var obj = new GameObject(id); obj.transform.SetParent(root.transform);
+                var ball = obj.AddComponent<TopicBall>();
+                ball.Initialize(new NodeData { id = id, topic = id, parentIds = parents }, null);
+                ((System.Collections.Generic.List<TopicBall>)controller.Balls).Add(ball);
+                return ball;
+            }
+            var parent = Make("parent", Array.Empty<string>());
+            var child = Make("child", new[] { "parent" });
+            var edges = (System.Collections.Generic.List<NodeEdge>)typeof(ConstellationController).GetField("_edges", flags).GetValue(controller);
+            edges.Add(new NodeEdge { from = "parent", to = "child" });
+            try
+            {
+                Assert.IsNull(parent.transform.Find("Topic note/Note paper"), "Node labels must not create white paper panels.");
+                controller.Save();
+                controller.DeleteBall(parent);
+                Assert.AreSame(parent, controller.PendingDeletion);
+                Assert.AreEqual(2, controller.Balls.Count);
+                Assert.IsNotNull(root.GetComponentInChildren<ControlsCard>(), "Deletion needs a visible confirmation pane.");
+                controller.CancelDeletion();
+                Assert.AreEqual(2, controller.Balls.Count);
+                CollectionAssert.AreEqual(new[] { "parent" }, child.Data.parentIds);
+                controller.ConfirmDeletion();
+                Assert.AreEqual(2, controller.Balls.Count, "Confirmation without a pending target must do nothing.");
+                controller.DeleteBall(parent);
+                controller.Select(child); // Hovering a different node must not change the confirmed target.
+                controller.ConfirmDeletion();
+                Assert.AreEqual(1, controller.Balls.Count);
+                Assert.AreSame(child, controller.Balls[0]);
+                Assert.IsEmpty(child.Data.parentIds);
+                var saved = JsonUtility.FromJson<ConstellationData>(File.ReadAllText(path));
+                Assert.AreEqual(1, saved.nodes.Length);
+                Assert.AreEqual("child", saved.nodes[0].id);
+                Assert.IsEmpty(saved.nodes[0].parentIds);
+                Assert.IsEmpty(saved.edges);
+                yield return null;
+            }
+            finally { Object.Destroy(root); if (File.Exists(path)) File.Delete(path); }
+        }
+
         [Test]
         public void WorldNeighboursKeepParentChildTravelSeparateFromOtherDomains()
         {

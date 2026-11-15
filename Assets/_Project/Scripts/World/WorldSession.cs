@@ -66,8 +66,11 @@ namespace Zap.World
 
             if (_domeView != null)
             {
+                _domeView.SetMappingMode(DomeView.MappingMode.Wrap);
+                _domeView.AlignToViewer();
                 _domeView.SetVisible(true);
             }
+            GetComponent<WorldStream>()?.SetStartingImage(imageBase64);
 
             if (_relayClient == null)
             {
@@ -122,10 +125,12 @@ namespace Zap.World
 
         private void HandleRelayStatus(StatusMessage status)
         {
+            if (status == null) return;
             if (_awaitingEnter && status.state == "idle" && string.IsNullOrEmpty(status.detail)) return;
             if (status.state == "connecting" || status.state == "streaming" || status.state == "error") _awaitingEnter = false;
             if (status != null && !string.IsNullOrEmpty(status.state))
             {
+                if (!string.IsNullOrEmpty(status.projection)) _domeView?.SetProjection(status.projection, status.liveViews);
                 State = status.state;
                 if (State == "error" || State == "idle")
                 {

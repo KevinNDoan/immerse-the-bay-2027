@@ -1,6 +1,6 @@
 # ZAP! relay
 
-Python 3.12 service for local speech transcription, GPT-6 Luna notes, and Orbis video/audio.
+Python 3.12 service for local speech, GPT-6 Luna notes and learning objects, cached World Labs geometry, and the optional Orbis video experiment.
 
 ```sh
 uv sync --python 3.12 --extra live --extra speech
@@ -17,11 +17,27 @@ Local speech uses Faster Whisper (`SPEECH_MODEL=base.en`), downloaded on first u
 - Health: `GET /health`; capability/configuration flags: `GET /capabilities`
 - Speech: `POST /speech/transcribe` (WAV body)
 - Create/edit: `POST /nodes/update` (JSON, including optional parent notes)
+- Prepare/load a world: `POST /world/prepare`; poll geometry jobs at `GET /world/jobs/{cacheKey}`
+- Crystal preview: `GET /world/preview` reads the existing panorama without starting generation
+- Geometry: `GET /world/assets/{cacheKey}/{filename}` serves converted meshes and textures
+- Ask, add, or revise exploration objects: `POST /world/explore` (legacy revision: `/world/study`)
 - End a world immediately: `POST /world/kill`
 
 ```sh
-env ORBIS_MODE=standin REACTOR_API_KEY= OPENAI_API_KEY= .venv/bin/python -m pytest -q
+env ORBIS_MODE=standin REACTOR_API_KEY= OPENAI_API_KEY= WORLD_LABS_API_KEY= .venv/bin/python -m pytest -q
 .venv/bin/python scripts/smoke_world.py
 ```
 
 The socket smoke test starts a world in the server's configured mode and closes it in `finally`. Live mode incurs Reactor usage. See [the full setup and controls](../docs/voice-worlds.md) and [protocol](../docs/protocol.md).
+
+With a World Labs key, `WORLD_PROVIDER=auto` uses geometry for headset entry. `WORLD_PROVIDER=orbis` explicitly selects the earlier video experiment. `WORLD_GENERATION_ENABLED=false` is the default and must stay false for the owner's current one-world test budget. `WORLD_TEST_WORLD_ID` pins the already-generated test environment; other topics reuse its geometry and receive their own context-aware learning objects. Geometry is cached under ignored `.cache/geometry/`; do not delete this cache during the demo. The preview endpoint never creates a paid job. See [spatial world details](../docs/spatial-worlds.md).
+
+For a headset demo that cannot use provider credits, run the saved-world replay service:
+
+```sh
+.venv/bin/python scripts/run_saved_world_demo.py --world-id YOUR_CACHED_WORLD_ID
+```
+
+It listens on localhost port 8793, loads no `.env` or provider keys, and requires the existing imported geometry and plan. Cached topic plans are reused; new topics receive the saved demonstration model. AI model revisions are unavailable in this mode. Forward USB port 8793 and set the development headset URL to `http://127.0.0.1:8793`. Keep the relay and USB connection available while testing. The normal relay on 8787 can remain running separately.
+
+To enable GPT object creation and explanations while reusing the same environment, add `--enable-openai`. This reads only `OPENAI_API_KEY` and `NODE_MODEL` from the ignored env files; it still passes empty World Labs/Reactor keys, disables image generation, and forbids environment generation/export. OpenAI text requests incur their normal usage. `--study-plan /absolute/path/to/model.json` selects an explicit cached demonstration model; it does not add topic-specific routing. The app keeps each idea’s object collection on the headset.

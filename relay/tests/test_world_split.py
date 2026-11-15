@@ -15,7 +15,8 @@ def test_world_routes_are_registered() -> None:
         model="reactor/visko-orbis-stable",
         port=8787,
     )
-    paths = {route.path for route in create_app(settings).routes}
+    routes = create_app(settings).routes
+    paths = {route.path for route in routes}
     expected = {
         "/health",
         "/",
@@ -25,5 +26,18 @@ def test_world_routes_are_registered() -> None:
         "/capabilities",
         "/speech/transcribe",
         "/nodes/update",
+        "/world/prepare",
+        "/world/jobs/{key}",
+        "/world/preview",
+        "/world/assets/{key}/{filename}",
+        "/world/study",
+        "/world/explore",
     }
     assert expected <= paths
+    for path in expected:
+        assert sum(route.path == path for route in routes) == 1, path
+    transport_paths = {"/health", "/", "/stream.mjpg", "/world/kill", "/ws/world"}
+    for route in routes:
+        if route.path in expected:
+            module = "zap_relay.world" if route.path in transport_paths else "zap_relay.app"
+            assert route.endpoint.__module__ == module, route.path

@@ -78,7 +78,7 @@ namespace Zap.Desktop
             if (_mouse == null) _mouse = Mouse.current;
             if (_keyboard == null) _keyboard = Keyboard.current;
 
-            bool inWorld = _controller.InWorld;
+            bool inWorld = _controller.WorldActive;
             if (inWorld != _wasInWorld)
             {
                 if (inWorld) EnterWorldView();
@@ -95,7 +95,7 @@ namespace Zap.Desktop
                 UpdateOrbitInput();
                 UpdateLeftMouse();
             }
-            if (_controller.InWorld)
+            if (_controller.WorldActive)
             {
                 EnterWorldView();
                 _wasInWorld = true;
@@ -125,7 +125,7 @@ namespace Zap.Desktop
 
             FocusAllBalls();
             CreateLinkLine();
-            _wasInWorld = _controller.InWorld;
+            _wasInWorld = _controller.WorldActive;
             if (_wasInWorld) EnterWorldView();
             _setup = true;
         }

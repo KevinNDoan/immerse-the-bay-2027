@@ -34,7 +34,7 @@ namespace Zap.Constellation
         private static readonly string[] Instructions =
         {
             "Hold A and say a topic, like 'volcanoes'. Let go when you're done.",
-            "Squeeze the grip to pick it up. Let go to place it. Throw it to delete it.",
+            "Squeeze the grip to pick it up. Let go gently to place it. Throw forward to enter its world.",
             "Say another topic. To link or unlink two, tap them together.",
             "Aim at a topic and press X to step inside. Press Y to come back."
         };
@@ -59,22 +59,35 @@ namespace Zap.Constellation
         {
             new ControlHint(ControlId.RightA, "Hold: new topic"),
             new ControlHint(ControlId.RightB, "Hold: change topic"),
-            new ControlHint(ControlId.RightGrip, "Grab · throw to delete"),
-            new ControlHint(ControlId.LeftGrip, "Grab · throw to delete"),
+            new ControlHint(ControlId.RightGrip, "Grab · throw to travel"),
+            new ControlHint(ControlId.LeftGrip, "Grab · throw to travel"),
             new ControlHint(ControlId.RightTrigger, "Aim and drag: link"),
             new ControlHint(ControlId.LeftX, "Step inside"),
+            new ControlHint(ControlId.LeftY, "Delete selected idea…"),
             new ControlHint(ControlId.LeftStick, "Hold: tutorial")
         };
 
         private static readonly ControlHint[] WorldHints =
         {
-            new ControlHint(ControlId.LeftStick, "Move"),
-            new ControlHint(ControlId.RightStick, "Look"),
-            new ControlHint(ControlId.RightA, "Hold: speak"),
+            new ControlHint(ControlId.LeftStick, "Walk"),
+            new ControlHint(ControlId.RightStick, "Look / zoom object"),
+            new ControlHint(ControlId.RightA, "Hold: new idea"),
             new ControlHint(ControlId.RightB, "Hold: change topic"),
-            new ControlHint(ControlId.RightTrigger, "Event"),
-            new ControlHint(ControlId.LeftY, "Return")
+            new ControlHint(ControlId.RightTrigger, "Explore object"),
+            new ControlHint(ControlId.LeftTrigger, "Hold: ask / create object"),
+            new ControlHint(ControlId.RightGrip, "Move object / pane"),
+            new ControlHint(ControlId.LeftGrip, "Move object / pane"),
+            new ControlHint(ControlId.LeftX, "Linked world / recenter"),
+            new ControlHint(ControlId.LeftY, "Return to map")
         };
+
+        private static readonly ControlHint[] TravelHints = { new ControlHint(ControlId.LeftY, "Return to map") };
+        private static readonly ControlHint[] DeleteHints =
+        {
+            new ControlHint(ControlId.LeftX, "Confirm delete", true),
+            new ControlHint(ControlId.LeftY, "Keep idea", true)
+        };
+        private static readonly ControlHint[] CancelHints = { new ControlHint(ControlId.LeftY, "Cancel request", true) };
 
         private readonly ControllerActions _input = new ControllerActions();
         private ConstellationController _controller;
@@ -96,7 +109,7 @@ namespace Zap.Constellation
             var onboarding = root.AddComponent<Onboarding>();
             onboarding._controller = controller;
             onboarding._hints = hints;
-            if (PlayerPrefs.GetInt(TutorialDoneKey, 0) == 0)
+            if (controller.Balls.Count == 0 && PlayerPrefs.GetInt(TutorialDoneKey, 0) == 0)
                 onboarding.BeginTutorial();
             return onboarding;
         }
@@ -151,7 +164,7 @@ namespace Zap.Constellation
                 _holdArmed = true;
                 _heldFor = 0f;
             }
-            else if (!_holdArmed || _controller.InWorld)
+            else if (!_holdArmed || _controller.WorldActive)
             {
                 _heldFor = 0f;
             }
@@ -179,10 +192,18 @@ namespace Zap.Constellation
             if (Running)
                 UpdateTutorial();
 
-            if (Running)
+            if (_controller.PendingDeletion != null)
+                _hints.Show(DeleteHints, false);
+            else if (_controller.CanCancelVoice)
+                _hints.Show(CancelHints, false);
+            else if (_controller.IsTravelling)
+                _hints.Show(TravelHints, false);
+            else if (_controller.WorldActive)
+                _hints.Show(WorldHints, false);
+            else if (Running)
                 _hints.Show(StepHints[Step], true);
             else
-                _hints.Show(_controller.InWorld ? WorldHints : VoidHints, false);
+                _hints.Show(VoidHints, false);
         }
 
         private void BeginTutorial()

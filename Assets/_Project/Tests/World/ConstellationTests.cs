@@ -1,9 +1,12 @@
 using System;
 using System.Collections;
 using System.IO;
+using System.Reflection;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
+using UnityEngine.XR.Interaction.Toolkit;
+using UnityEngine.XR.Interaction.Toolkit.Interactors;
 using Zap.Constellation;
 using Zap.Core;
 using Object = UnityEngine.Object;
@@ -12,6 +15,175 @@ namespace Zap.World.Tests
 {
     public class ConstellationTests
     {
+        [UnityTest]
+        public IEnumerator NodeDeletionRequiresConfirmationAndPreservesChildrenOnDisk()
+        {
+            const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+            var root = new GameObject("Deletion test");
+            var controller = root.AddComponent<ConstellationController>(); controller.enabled = false;
+            var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".json");
+            typeof(ConstellationController).GetField("_savePath", flags).SetValue(controller, path);
+            TopicBall Make(string id, string[] parents)
+            {
+                var obj = new GameObject(id); obj.transform.SetParent(root.transform);
+                var ball = obj.AddComponent<TopicBall>();
+                ball.Initialize(new NodeData { id = id, topic = id, parentIds = parents }, null);
+                ((System.Collections.Generic.List<TopicBall>)controller.Balls).Add(ball);
+                return ball;
+            }
+            var parent = Make("parent", Array.Empty<string>());
+            var child = Make("child", new[] { "parent" });
+            var edges = (System.Collections.Generic.List<NodeEdge>)typeof(ConstellationController).GetField("_edges", flags).GetValue(controller);
+            edges.Add(new NodeEdge { from = "parent", to = "child" });
+            try
+            {
+                Assert.IsNull(parent.transform.Find("Topic note/Note paper"), "Node labels must not create white paper panels.");
+                controller.Save();
+                controller.DeleteBall(parent);
+                Assert.AreSame(parent, controller.PendingDeletion);
+                Assert.AreEqual(2, controller.Balls.Count);
+                Assert.IsNotNull(root.GetComponentInChildren<ControlsCard>(), "Deletion needs a visible confirmation pane.");
+                controller.CancelDeletion();
+                Assert.AreEqual(2, controller.Balls.Count);
+                CollectionAssert.AreEqual(new[] { "parent" }, child.Data.parentIds);
+                controller.ConfirmDeletion();
+                Assert.AreEqual(2, controller.Balls.Count, "Confirmation without a pending target must do nothing.");
+                controller.DeleteBall(parent);
+                controller.Select(child); // Hovering a different node must not change the confirmed target.
+                controller.ConfirmDeletion();
+                Assert.AreEqual(1, controller.Balls.Count);
+                Assert.AreSame(child, controller.Balls[0]);
+                Assert.IsEmpty(child.Data.parentIds);
+                var saved = JsonUtility.FromJson<ConstellationData>(File.ReadAllText(path));
+                Assert.AreEqual(1, saved.nodes.Length);
+                Assert.AreEqual("child", saved.nodes[0].id);
+                Assert.IsEmpty(saved.nodes[0].parentIds);
+                Assert.IsEmpty(saved.edges);
+                yield return null;
+            }
+            finally { Object.Destroy(root); if (File.Exists(path)) File.Delete(path); }
+        }
+
+        [Test]
+        public void WorldNeighboursKeepParentChildTravelSeparateFromOtherDomains()
+        {
+            var wall = new NodeData { id="wall", topic="Exterior" };
+            var tower = new NodeData { id="tower", topic="Interior", parentIds=new[]{"wall"} };
+            var lab = new NodeData { id="lab", topic="Biology" };
+            var nodes = new[]{wall,tower,lab};
+            CollectionAssert.AreEqual(new[]{tower},NodeContext.Neighbours(wall,nodes));
+            CollectionAssert.AreEqual(new[]{wall},NodeContext.Neighbours(tower,nodes));
+            Assert.IsEmpty(NodeContext.Neighbours(lab,nodes));
+            Assert.IsEmpty(NodeContext.Parents(lab,nodes));
+            CollectionAssert.AreEqual(new[]{wall},NodeContext.Parents(tower,nodes));
+        }
+
+        [Test]
+        public void ActiveGeometryHeartbeatKeepsLongJourneyAliveButCannotReviveCancelledOrStalledTravel()
+        {
+            const BindingFlags flags=BindingFlags.Instance|BindingFlags.NonPublic;
+            var root=new GameObject("Long generation heartbeat test");
+            var controller=root.AddComponent<ConstellationController>(); controller.enabled=false;
+            var journey=root.AddComponent<WorldJourney>();
+            void Set(string name,object value) => typeof(ConstellationController).GetField(name,flags).SetValue(controller,value);
+            bool Expired() => (bool)typeof(ConstellationController).GetProperty("LoadingTimedOut",flags).GetValue(controller);
+            bool Heartbeat(PreparedWorld value,int version=7) => (bool)typeof(ConstellationController)
+                .GetMethod("AcceptPreparationHeartbeat",flags).Invoke(controller,new object[]{value,version});
+            var pending=new PreparedWorld {projection="geometry",state="preparing",cacheKey=new string('a',64)};
+            try
+            {
+                Set("_journey",journey); Set("_worldRequest",7); Set("_preparingWorld",true);
+                journey.Begin(Vector3.zero,Vector3.forward);
+                Set("_loadingStarted",Time.unscaledTime-2400);
+                Assert.IsTrue(Expired(),"A silent forty-minute request should time out.");
+                Assert.IsTrue(Heartbeat(pending));
+                Assert.IsFalse(Expired(),"An active export must keep hyperspace alive beyond four minutes.");
+                Assert.IsTrue(journey.IsActive,"A preparation heartbeat must not reveal the unfinished world.");
+
+                Set("_loadingStarted",Time.unscaledTime-241);
+                Assert.IsTrue(Expired(),"If heartbeats stop, the original timeout must still apply.");
+                foreach (var invalid in new[] {null,
+                    new PreparedWorld {projection="geometry",state="error",cacheKey=pending.cacheKey},
+                    new PreparedWorld {projection="geometry",state="ready",cacheKey=pending.cacheKey},
+                    new PreparedWorld {projection="panorama",state="preparing",cacheKey=pending.cacheKey},
+                    new PreparedWorld {projection="geometry",state="preparing",cacheKey="invalid"}})
+                {
+                    Assert.IsFalse(Heartbeat(invalid));
+                    Assert.IsTrue(Expired(),"Invalid or completed jobs cannot extend a pending journey.");
+                }
+                Assert.IsFalse(Heartbeat(pending,6)); Assert.IsTrue(Expired(),"A previous request cannot extend the current one.");
+                Set("_preparingWorld",false);
+                Assert.IsFalse(Heartbeat(pending)); Assert.IsTrue(Expired(),"A stalled live stream must retain its timeout.");
+                journey.Cancel();
+                Assert.IsFalse(Heartbeat(pending)); Assert.IsFalse(Expired());
+                Assert.IsFalse(journey.IsActive,"A late response must not restart a cancelled journey.");
+            }
+            finally { Object.Destroy(root); }
+        }
+
+        [UnityTest]
+        public IEnumerator ConnectedWorldOrbsAreReachableBothWaysAndRestoreMapPositions()
+        {
+            const BindingFlags flags=BindingFlags.Instance|BindingFlags.NonPublic;
+            var camera=new GameObject("Linked travel camera"); camera.tag="MainCamera";
+            camera.AddComponent<Camera>(); camera.transform.position=Vector3.up*1.6f;
+            var root=new GameObject("Linked travel controller");
+            var controller=root.AddComponent<ConstellationController>(); controller.enabled=false;
+            var content=new GameObject("Map nodes").transform; content.SetParent(root.transform);
+            var branches=new GameObject("Linked world nodes").transform; branches.SetParent(root.transform);
+            var material=new Material(Shader.Find("Zap/Solid"));
+            var manager=new GameObject("Linked travel interaction manager"); manager.AddComponent<XRInteractionManager>();
+            var hand=new GameObject("Linked travel hand"); hand.transform.position=Vector3.one*100;
+            hand.AddComponent<SphereCollider>().isTrigger=true; hand.AddComponent<Rigidbody>().isKinematic=true;
+            var interactor=hand.AddComponent<XRDirectInteractor>();
+            void Set(string name,object value) => typeof(ConstellationController).GetField(name,flags).SetValue(controller,value);
+            void Call(string name) => typeof(ConstellationController).GetMethod(name,flags).Invoke(controller,null);
+            TopicBall Target() => (TopicBall)typeof(ConstellationController).GetProperty("LinkedTravelTarget",flags).GetValue(controller);
+            TopicBall Ball(NodeData data)
+            {
+                var obj=new GameObject(data.topic); obj.transform.SetParent(content); obj.transform.position=data.position;
+                var ball=obj.AddComponent<TopicBall>(); ball.Initialize(data,material);
+                ((System.Collections.Generic.List<TopicBall>)controller.Balls).Add(ball);
+                return ball;
+            }
+            Set("_content",content); Set("_branches",branches);
+            Set("_space",root.AddComponent<StudyWorkspace>());
+            Set("_environment",root.AddComponent<GeneratedEnvironment>());
+            Set("_journey",root.AddComponent<WorldJourney>());
+            var parent=Ball(new NodeData {id="parent",topic="Parent idea",position=new Vector3(-1,1.3f,3)});
+            var child=Ball(new NodeData {id="child",topic="Child idea",parentIds=new[]{"parent"},position=new Vector3(-1,1.3f,4)});
+            var other=Ball(new NodeData {id="other",topic="Independent idea",position=new Vector3(1,1.3f,3)});
+            Vector3 parentMap=parent.transform.position,childMap=child.transform.position;
+            try
+            {
+                Set("_worldNode",parent); Set("_worldVisible",true); content.gameObject.SetActive(false); Call("ShowLinkedWorlds");
+                yield return null;
+                Assert.AreEqual(branches,child.transform.parent); Assert.IsTrue(child.gameObject.activeInHierarchy);
+                Assert.IsTrue(child.HasWorldTravelHint); Assert.IsFalse(other.gameObject.activeInHierarchy);
+                controller.Select(child);
+                Assert.IsNull(Target(),"A remembered hover must not make X unexpectedly enter another world.");
+                hand.transform.position=child.transform.position;
+                interactor.StartManualInteraction((UnityEngine.XR.Interaction.Toolkit.Interactables.IXRSelectInteractable)child.Grab);
+                yield return null;
+                Assert.AreSame(child,Target(),"Holding the linked orb must provide an X travel target.");
+                interactor.EndManualInteraction(); hand.transform.position=Vector3.one*100;
+                Call("ShowConstellation");
+                Assert.AreEqual(content,child.transform.parent); Assert.AreEqual(childMap,child.transform.position);
+                Assert.IsFalse(child.HasWorldTravelHint);
+
+                Set("_worldNode",child); Set("_worldVisible",true); content.gameObject.SetActive(false); Call("ShowLinkedWorlds");
+                Assert.AreEqual(branches,parent.transform.parent); Assert.IsTrue(parent.gameObject.activeInHierarchy);
+                Assert.IsTrue(parent.HasWorldTravelHint); Assert.IsFalse(other.gameObject.activeInHierarchy);
+                Call("ShowConstellation");
+                Assert.AreEqual(parentMap,parent.transform.position); Assert.IsFalse(parent.HasWorldTravelHint);
+
+                Set("_worldNode",other); Set("_worldVisible",true); content.gameObject.SetActive(false); Call("ShowLinkedWorlds");
+                Assert.AreEqual(0,branches.childCount,"Independent roots must not gain unrelated travel orbs.");
+                Call("ShowConstellation");
+            }
+            finally { Object.Destroy(root); Object.Destroy(hand); Object.Destroy(manager); Object.Destroy(camera); Object.Destroy(material); }
+        }
+
         [Test]
         public void HomeFrameAlignPutsHeadOverOriginFacingForward()
         {
@@ -282,6 +454,54 @@ namespace Zap.World.Tests
                 if (tossedObject != null) Object.Destroy(tossedObject);
                 if (material != null) Object.Destroy(material);
             }
+        }
+
+        [UnityTest]
+        public IEnumerator GrabReleaseTransfersThrowVelocityAndBallFloats()
+        {
+            var managerObject = new GameObject("Test interaction manager");
+            managerObject.AddComponent<XRInteractionManager>();
+            var hand = new GameObject("Test hand");
+            hand.transform.position = Vector3.up * 1.5f;
+            var collider = hand.AddComponent<SphereCollider>(); collider.isTrigger = true; collider.radius = .1f;
+            var body = hand.AddComponent<Rigidbody>(); body.isKinematic = true; body.useGravity = false;
+            var interactor = hand.AddComponent<XRDirectInteractor>();
+            var obj = new GameObject("Test topic"); obj.transform.position = hand.transform.position;
+            var ball = obj.AddComponent<TopicBall>();
+            var material = new Material(Shader.Find("Zap/Solid"));
+            ball.Initialize(new NodeData { topic = "Volcanoes" }, material);
+            ball.Grab.attachEaseInTime = 0;
+            bool discarded = false; ball.Tossed += _ => discarded = true;
+            try
+            {
+                yield return null;
+                interactor.StartManualInteraction((UnityEngine.XR.Interaction.Toolkit.Interactables.IXRSelectInteractable)ball.Grab);
+                Assert.IsTrue(ball.Grab.isSelected);
+                float start = Time.time;
+                while (Time.time - start < .4f)
+                {
+                    hand.transform.position += Vector3.forward * (2.8f * Time.deltaTime);
+                    yield return null;
+                }
+                Assert.IsTrue(ball.Grab.isSelected, "Selection must persist throughout the throw gesture.");
+                interactor.EndManualInteraction();
+                yield return new WaitForFixedUpdate();
+                yield return null;
+                Assert.IsFalse(ball.Grab.isSelected);
+                Assert.IsFalse(ball.Body.isKinematic);
+                Assert.IsFalse(ball.Body.useGravity);
+                Assert.Greater(ball.Body.linearVelocity.z, .2f, "Release should carry controller motion into the throw.");
+                float speed = ball.Body.linearVelocity.magnitude;
+                Vector3 released = ball.transform.position;
+                yield return new WaitForSeconds(1.5f);
+                Assert.IsTrue(ball != null, "A physical travel throw must keep its idea node.");
+                Assert.IsFalse(discarded, "The physical release must never invoke explicit discard.");
+                Assert.IsFalse(ball.IsTossed);
+                Assert.Greater(ball.transform.position.z, released.z + .1f);
+                Assert.Less(ball.Body.linearVelocity.magnitude, speed);
+                Assert.That(ball.transform.position.y, Is.EqualTo(released.y).Within(.05f), "The thrown ball must not fall.");
+            }
+            finally { Object.Destroy(obj); Object.Destroy(hand); Object.Destroy(managerObject); Object.Destroy(material); }
         }
 
         [UnityTest]

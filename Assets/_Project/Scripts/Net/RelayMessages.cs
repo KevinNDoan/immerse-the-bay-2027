@@ -46,6 +46,8 @@ namespace Zap.Net
         public string t = "status";
         public string state = "";
         public string detail = "";
+        public string projection = "";
+        public int liveViews;
     }
 
     [Serializable]

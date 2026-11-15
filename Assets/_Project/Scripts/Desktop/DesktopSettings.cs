@@ -22,6 +22,7 @@ namespace Zap.Desktop
         private sealed class Capabilities
         {
             public string orbisMode;
+            public string worldProvider;
             public bool speechInstalled;
             public bool nodeAiConfigured;
         }
@@ -154,7 +155,8 @@ namespace Zap.Desktop
                     yield break;
                 }
 
-                string worlds = capabilities.orbisMode == "live" ? "live" : "stand-in picture";
+                string worlds = capabilities.worldProvider == "worldlabs" ? "3D environments" :
+                    capabilities.orbisMode == "live" ? "live video" : "stand-in picture";
                 string voice = capabilities.speechInstalled ? "ready" : "not installed";
                 string notes = capabilities.nodeAiConfigured ? "on" : "off (no key)";
                 DesktopUi.SetText(_connectionStatus, "Worlds: " + worlds + "\nVoice: " + voice + "\nNote writing: " + notes);

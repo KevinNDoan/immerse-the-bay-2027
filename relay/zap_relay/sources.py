@@ -116,11 +116,12 @@ class ReactorSource:
     """Bounded latest-frame bridge; command shapes follow the Orbis schema."""
 
     def __init__(self, api_key, model, on_video, on_audio, on_error,
-                 max_width=1280, resolution="", reactor_factory=None):
+                 max_width=1280, resolution="", reactor_factory=None, audio_enabled=True):
         self._api_key, self._model = api_key, model
         self._on_video, self._on_audio, self._on_error = on_video, on_audio, on_error
         self._max_width, self._resolution = max_width, resolution
         self._factory = reactor_factory
+        self._audio_enabled = audio_enabled
         self._reactor = None
         self._loop = None
         self._video_seq = self._audio_seq = 0
@@ -154,11 +155,13 @@ class ReactorSource:
                 raise ValueError("ORBIS_RESOLUTION is not offered by this deployment")
             await reactor.send_command("set_resolution", {"resolution": self._resolution})
         # Sound is enabled by the model's default; do not send an unnecessary toggle.
+        if not self._audio_enabled:
+            await reactor.send_command("set_audio_enabled", {"audio_enabled": False})
         if image:
             image_bytes = base64.b64decode(image, validate=True)
             uploaded = await reactor.upload_file(image_bytes, name="initial.jpg", mime_type="image/jpeg")
             await reactor.send_command("set_image", {"image": uploaded})
-        await reactor.send_command("set_prompt", {"prompt": prompt})
+        await reactor.send_command("set_prompt", self._prompt_data(prompt))
         self._active = True
         with self._frame_lock:
             self._pending = None
@@ -170,8 +173,15 @@ class ReactorSource:
         if self._reactor is None or not self._active:
             raise RuntimeError("Orbis session is not connected")
         applies_at = self._video_seq + math.ceil(STEER_DELAY_SECONDS * FPS)
-        await self._reactor.send_command("set_prompt", {"prompt": prompt})
+        await self._reactor.send_command("set_prompt", self._prompt_data(prompt))
         return applies_at
+
+    def _prompt_data(self, prompt):
+        data = {"prompt": prompt}
+        if self._model == "reactor/visko-orbis-stable":
+            # Preserve the panoramic projection and camera contract verbatim.
+            data["passthrough"] = True
+        return data
 
     async def stop(self) -> None:
         was_active = self._active

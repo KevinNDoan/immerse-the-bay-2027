@@ -30,6 +30,7 @@ namespace Zap.Constellation
         string _lastStatus;
         string _lastHint;
         int _homeFrameVersion = -1;
+        bool _followingViewer;
         bool _built;
 
         public bool Visible
@@ -53,7 +54,7 @@ namespace Zap.Constellation
             return card;
         }
 
-        public void Show(string title, string step, string status, string hint, bool listening, float level, bool busy)
+        public void Show(string title, string step, string status, string hint, bool listening, float level, bool busy, bool followViewer = false, Transform hand = null)
         {
             if (!_built) return;
 
@@ -91,8 +92,11 @@ namespace Zap.Constellation
             }
 
             UpdateLevelBar(listening, level, busy);
-            if (_homeFrameVersion != HomeFrame.Version)
+            if (followViewer)
+                AlignToViewer(hand);
+            else if (_followingViewer || _homeFrameVersion != HomeFrame.Version)
                 AlignToHomeFrame();
+            _followingViewer = followViewer;
         }
 
         void Build()
@@ -262,6 +266,18 @@ namespace Zap.Constellation
             transform.position = new Vector3(0f, headHeight - _theme.controlsDropBelowEyes, _theme.controlsDistance);
             transform.rotation = Quaternion.identity;
             _homeFrameVersion = HomeFrame.Version;
+        }
+
+        void AlignToViewer(Transform hand)
+        {
+            var camera = Camera.main;
+            if (camera == null) return;
+            var head = camera.transform;
+            Vector3 offset = hand != null ? hand.position + Vector3.up * .13f + hand.forward * .18f - head.position
+                : head.forward * 1.1f + Vector3.down * .3f;
+            if (offset.sqrMagnitude < .01f) offset = head.forward;
+            transform.position = head.position + offset.normalized * Mathf.Max(_theme.controlsMinDistanceFromFace, offset.magnitude);
+            transform.rotation = Quaternion.LookRotation(transform.position - head.position);
         }
 
         void OnDestroy()

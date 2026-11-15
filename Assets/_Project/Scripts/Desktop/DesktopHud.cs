@@ -12,8 +12,7 @@ namespace Zap.Desktop
         private const string ConstellationHint = "Click: select · Drag: move · Shift-drag: link · Option-drag: cut · Double-click: enter · Right-drag: orbit · Scroll: zoom · Hold V: speak";
         private const string WorldHint = "Arrows: move and look · Space: event · Esc: back · Hold V: speak";
         private const string ConstellationPlaceholder = "Type a topic and press Enter";
-        private const string WorldPlaceholder = "Ask to see something and press Enter";
-        private const float DeleteConfirmSeconds = 3f;
+        private const string WorldPlaceholder = "Ask a question or request an object, then press Enter";
 
         private ConstellationController _controller;
         private TextMeshProUGUI _worldTopic;
@@ -21,20 +20,18 @@ namespace Zap.Desktop
         private TextMeshProUGUI _sideTopic;
         private TextMeshProUGUI _sideSummary;
         private TextMeshProUGUI _hint;
-        private TextMeshProUGUI _deleteLabel;
         private TMP_InputField _topicInput;
         private TMP_InputField _editInput;
         private Button _backButton;
         private Button _enterButton;
         private Button _editButton;
         private Button _deleteButton;
+        private Button _newIdeaButton;
         private GameObject _canvasObject;
         private GameObject _backObject;
         private GameObject _sidePanel;
         private GameObject _editObject;
         private Image _topPanel;
-        private TopicBall _deleteArmedFor;
-        private float _deleteConfirmUntil;
         private bool _lastBusy;
         private bool _lastInWorld;
         private bool _hasState;
@@ -60,17 +57,19 @@ namespace Zap.Desktop
                 }
             }
 
-            bool inWorld = _controller.InWorld;
-            bool busy = _controller.Busy;
+            bool inWorld = _controller.WorldActive;
+            bool busy = _controller.Busy || _controller.IsTravelling;
             var current = _controller.Current;
+            var worldNode = _controller.WorldNode;
             bool showSide = current != null && !inWorld;
 
             DesktopUi.SetActive(_backObject, inWorld);
             DesktopUi.SetActive(_worldTopic.gameObject, inWorld);
+            DesktopUi.SetActive(_newIdeaButton.gameObject, inWorld);
             DesktopUi.SetActive(_sidePanel, showSide);
             if (!showSide) DesktopUi.SetActive(_editObject, false);
 
-            DesktopUi.SetText(_worldTopic, inWorld && current != null ? current.Data.topic : string.Empty);
+            DesktopUi.SetText(_worldTopic, inWorld && worldNode != null ? worldNode.Data.topic : string.Empty);
             DesktopUi.SetText(_status, _controller.IsListening ? "Listening…" : _controller.Status);
             DesktopUi.SetText(_hint, inWorld ? WorldHint : ConstellationHint);
             if (showSide)
@@ -79,8 +78,6 @@ namespace Zap.Desktop
                 DesktopUi.SetText(_sideSummary, current.Data.summary);
             }
 
-            if (_deleteArmedFor != null && (current != _deleteArmedFor || Time.unscaledTime >= _deleteConfirmUntil))
-                ClearDeleteConfirm();
 
             if (!_hasState || inWorld != _lastInWorld)
             {
@@ -94,7 +91,9 @@ namespace Zap.Desktop
             {
                 _topicInput.interactable = !busy;
                 _editInput.interactable = !busy;
-                _backButton.interactable = !busy;
+                // Returning must remain possible while generation or an AI request is running.
+                _backButton.interactable = true;
+                _newIdeaButton.interactable = !busy;
                 _enterButton.interactable = !busy;
                 _editButton.interactable = !busy;
                 _deleteButton.interactable = !busy;
@@ -144,6 +143,11 @@ namespace Zap.Desktop
             DesktopUi.SetRect((RectTransform)_topicInput.transform, new Vector2(.5f, 0f), new Vector2(.5f, 0f), new Vector2(0f, 56f), new Vector2(720f, 56f));
             _topicInput.onSubmit.AddListener(SubmitTopic);
 
+            _newIdeaButton = DesktopUi.CreateButton("New idea", _canvasObject.transform, "New idea", theme);
+            DesktopUi.SetRect((RectTransform)_newIdeaButton.transform, new Vector2(.5f, 0f), new Vector2(.5f, 0f), new Vector2(440f, 56f), new Vector2(140f, 56f));
+            _newIdeaButton.onClick.AddListener(() => SubmitIdea(_topicInput.text));
+            _newIdeaButton.gameObject.SetActive(false);
+
             _status = DesktopUi.CreateText("Status", _canvasObject.transform, string.Empty, 20f, TextAlignmentOptions.Center, theme);
             DesktopUi.SetRect(_status.rectTransform, new Vector2(.5f, 0f), new Vector2(.5f, 0f), new Vector2(0f, 112f), new Vector2(900f, 34f));
 
@@ -163,7 +167,6 @@ namespace Zap.Desktop
             _editButton.onClick.AddListener(ShowEdit);
             _deleteButton = DesktopUi.CreateButton("Delete", _sidePanel.transform, "Delete", theme);
             DesktopUi.SetRect((RectTransform)_deleteButton.transform, new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(20f, 22f), new Vector2(-40f, 48f));
-            _deleteLabel = _deleteButton.GetComponentInChildren<TextMeshProUGUI>();
             _deleteButton.onClick.AddListener(DeleteCurrent);
             _editInput = DesktopUi.CreateInputField("Edit input", _sidePanel.transform, "Describe the change and press Enter", theme);
             DesktopUi.SetRect((RectTransform)_editInput.transform, new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(20f, 142f), new Vector2(-40f, 52f));
@@ -184,7 +187,17 @@ namespace Zap.Desktop
 
         private void SubmitTopic(string value)
         {
-            if (_controller == null || _controller.Busy || string.IsNullOrWhiteSpace(value)) return;
+            if (_controller == null || _controller.Busy || _controller.IsTravelling || string.IsNullOrWhiteSpace(value)) return;
+            if (_controller.InWorld) _controller.AskText(value.Trim());
+            else if (!_controller.WorldActive) _controller.SubmitText(value.Trim(), false);
+            else return;
+            _topicInput.SetTextWithoutNotify(string.Empty);
+            KeepFocus(_topicInput);
+        }
+
+        private void SubmitIdea(string value)
+        {
+            if (_controller == null || _controller.Busy || _controller.IsTravelling || string.IsNullOrWhiteSpace(value)) return;
             _controller.SubmitText(value.Trim(), false);
             _topicInput.SetTextWithoutNotify(string.Empty);
             KeepFocus(_topicInput);
@@ -226,23 +239,7 @@ namespace Zap.Desktop
             if (_controller == null || _controller.Busy) return;
             var current = _controller.Current;
             if (current == null) return;
-            if (_deleteArmedFor == current && Time.unscaledTime < _deleteConfirmUntil)
-            {
-                ClearDeleteConfirm();
-                _controller.DeleteBall(current);
-                return;
-            }
-
-            _deleteArmedFor = current;
-            _deleteConfirmUntil = Time.unscaledTime + DeleteConfirmSeconds;
-            DesktopUi.SetText(_deleteLabel, "Click again to delete");
-        }
-
-        private void ClearDeleteConfirm()
-        {
-            _deleteArmedFor = null;
-            _deleteConfirmUntil = 0f;
-            DesktopUi.SetText(_deleteLabel, "Delete");
+            _controller.DeleteBall(current);
         }
 
         private static void KeepFocus(TMP_InputField field)

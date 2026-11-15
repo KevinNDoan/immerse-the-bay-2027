@@ -11,11 +11,12 @@ namespace Zap.World
             Front
         }
 
-        private const float Radius = 5.0f;
+        private const float Radius = 80.0f;
         private const int LonSegments = 64;
         private const int LatSegments = 32;
 
-        public MappingMode Mode { get; private set; } = MappingMode.Front;
+        public MappingMode Mode { get; private set; } = MappingMode.Wrap;
+        public bool MultiView { get; private set; }
 
         private Mesh _mesh;
         private MeshFilter _meshFilter;
@@ -61,6 +62,7 @@ namespace Zap.World
                 name = "ZapDome_RuntimeMaterial"
             };
             _meshRenderer.material = _material;
+            _material.SetFloat("_MappingMode", Mode == MappingMode.Wrap ? 0 : 1);
         }
 
         private void BuildDomeMesh()
@@ -142,7 +144,7 @@ namespace Zap.World
 
             _mesh.vertices = vertices;
             _mesh.normals = normals;
-            _mesh.uv = _frontUVs;
+            _mesh.uv = _wrapUVs;
             _mesh.triangles = triangles;
             _mesh.RecalculateBounds();
 
@@ -152,9 +154,49 @@ namespace Zap.World
         public void SetMappingMode(MappingMode mode)
         {
             Mode = mode;
-            if (_mesh != null)
+            if (_material != null) _material.SetFloat("_MappingMode", mode == MappingMode.Wrap ? 0 : 1);
+        }
+
+        public void AlignToViewer()
+        {
+            if (Camera.main != null) transform.rotation = Quaternion.Euler(0, Camera.main.transform.eulerAngles.y, 0);
+        }
+
+        public void SetProjection(string projection, int liveViews)
+        {
+            MultiView = projection == "multiview";
+            if (_material == null) return;
+            _material.SetFloat("_Projection", MultiView ? 1 : 0);
+            _material.SetFloat("_LiveViews", liveViews);
+        }
+
+        public void SetSeed(Texture2D texture)
+        {
+            if (_material == null) return;
+            _material.SetTexture("_SeedTex", texture);
+            _material.SetFloat("_LiveReady", 0);
+        }
+
+        public string CapturePanorama()
+        {
+            if (_material == null) return "";
+            var previous = RenderTexture.active;
+            var target = RenderTexture.GetTemporary(1024, 512, 0, RenderTextureFormat.ARGB32);
+            var image = new Texture2D(1024, 512, TextureFormat.RGB24, false);
+            float mapping = _material.GetFloat("_MappingMode");
+            try
             {
-                _mesh.uv = (mode == MappingMode.Wrap) ? _wrapUVs : _frontUVs;
+                _material.SetFloat("_MappingMode", 0);
+                Graphics.Blit(_material.mainTexture, target, _material);
+                RenderTexture.active = target;
+                image.ReadPixels(new Rect(0, 0, 1024, 512), 0, 0); image.Apply();
+                return Convert.ToBase64String(image.EncodeToJPG(80));
+            }
+            finally
+            {
+                _material.SetFloat("_MappingMode", mapping);
+                RenderTexture.active = previous;
+                RenderTexture.ReleaseTemporary(target); Destroy(image);
             }
         }
 
@@ -176,6 +218,7 @@ namespace Zap.World
             if (_material != null)
             {
                 _material.mainTexture = texture;
+                _material.SetFloat("_LiveReady", 1);
             }
         }
 

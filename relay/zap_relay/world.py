@@ -1,6 +1,6 @@
-"""The world session: one Orbis (or stand-in) stream, shared by the headset and the judges' page.
+"""The world session: one Orbis (or stand-in) stream shared by headset and judges.
 
-Owned by the world lane. app.py only calls World(...) and register_world_routes().
+Owned by the world lane. app.py calls World(...) and register_world_routes().
 """
 
 from __future__ import annotations
@@ -19,7 +19,8 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from .config import Settings
-from .sources import ReactorSource, StandinSource, WorldSource
+from .sources import StandinSource, WorldSource
+from .surround import SurroundSource
 
 HEADER = struct.Struct("<BIQ")
 STATIC_INDEX = Path(__file__).with_name("static") / "index.html"
@@ -57,6 +58,7 @@ class World:
         self.event_prompt = ""
         self.owner: Client | None = None
         self.enter_task: asyncio.Task | None = None
+        self._last_view_mask = -1
 
     async def begin_enter(self, topic: str, prompt: str, image: str) -> None:
         await self._cancel_enter()
@@ -132,7 +134,7 @@ class World:
 
     def _compose_prompt(self) -> str:
         parts = [self.scene_prompt, self.camera_prompt, self.event_prompt]
-        return "\n".join(part for part in parts if part) + "\na single unbroken take"
+        return "\n".join(part for part in parts if part) + "\nKeep the established scene, a single unbroken take."
 
     async def exit(self) -> None:
         await self._cancel_enter()
@@ -190,6 +192,10 @@ class World:
         if self.state == "connecting":
             self.state = "streaming"
             await self._broadcast_control(self.status_message())
+        mask = getattr(self.source, "live_views", -1)
+        if mask != self._last_view_mask:
+            self._last_view_mask = mask
+            await self._broadcast_control(self.status_message())
         message = HEADER.pack(1, seq, time.monotonic_ns() // 1_000) + jpeg
         self.latest_jpeg = jpeg
         async with self.frame_changed:
@@ -225,21 +231,27 @@ class World:
                 yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n"
 
     def health(self) -> dict[str, Any]:
-        return {
+        result = {
             "ok": True,
             "mode": self.settings.mode,
             "state": self.state,
             "model": self.settings.model if self.settings.mode == "live" else "",
         }
+        if isinstance(self.source, SurroundSource):
+            result.update(projection="multiview", liveViews=self.source.live_views,
+                          unavailableViews=len(self.source.failures))
+        return result
 
-    def status_message(self) -> dict[str, str]:
-        return {"t": "status", "state": self.state, "detail": self.detail}
+    def status_message(self) -> dict[str, Any]:
+        status = {"t": "status", "state": self.state, "detail": self.detail}
+        if isinstance(self.source, SurroundSource) and self.state in {"connecting", "streaming"}:
+            status.update(projection="multiview", liveViews=self.source.live_views)
+        return status
 
     def _make_source(self) -> WorldSource:
         args = (self.on_video, self.on_audio, self.on_error)
         if self.settings.mode == "live":
-            return ReactorSource(self.settings.api_key, self.settings.model, *args,
-                                 max_width=self.settings.max_width, resolution=self.settings.resolution)
+            return SurroundSource(self.settings.api_key, self.settings.model, *args)
         return StandinSource(*args)
 
     async def _broadcast_control(self, message: dict[str, Any]) -> None:

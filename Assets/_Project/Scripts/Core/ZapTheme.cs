@@ -49,6 +49,8 @@ namespace Zap.Core
         [Header("Controls card")]
         [Tooltip("How far ahead of the person the card sits, in metres.")]
         public float controlsDistance = 1.2f;
+        [Tooltip("Closest distance of the in-world controls card from the face, in metres.")]
+        public float controlsMinDistanceFromFace = .6f;
         [Tooltip("How far below eye height the centre of the card sits, in metres.")]
         public float controlsDropBelowEyes = .1f;
         [Tooltip("Card size while a tutorial step shows, in metres.")]
@@ -82,7 +84,9 @@ namespace Zap.Core
         [Tooltip("Colour of a highlighted controller hint.")]
         public Color hintHighlightColor = Color.white;
 
-        [Header("Star images (used when Star core is set; otherwise a plain ball)")]
+        [Header("Star images (optional; crystal previews remain available)")]
+        [Tooltip("Use designer star art for nodes without a world preview. Recording always uses the glowing crystal.")]
+        public bool useStarNodeArt = false;
         [Tooltip("Real diameter of the star core when idle. Figma 64 px = 3.2 cm.")]
         public float starCoreDiameter = .032f;
         [Tooltip("Layer diameters as multiples of the idle core.")]

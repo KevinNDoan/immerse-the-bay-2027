@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using TMPro;
 using UnityEngine;
 using UnityEngine.XR.Interaction.Toolkit;
@@ -7,48 +8,37 @@ using Zap.Core;
 
 namespace Zap.Constellation
 {
-    [RequireComponent(typeof(Rigidbody), typeof(SphereCollider), typeof(XRGrabInteractable))]
+    [RequireComponent(typeof(Rigidbody), typeof(SphereCollider), typeof(TravelGrabInteractable))]
     public sealed class TopicBall : MonoBehaviour
     {
         public const float TossSpeed = 2.5f;
-        // How much larger a link-target preview is drawn.
         private const float HighlightScale = 1.25f;
-        // Compact note exports: 16 Figma px of shadow padding plus a 6 px corner, at 4x.
-        private const float CompactNoteBorderPixels = 88f;
-        private const float CompactNoteInset = 64f / ZapArt.PixelsPerMetre;
-        // Expanded note exports: a 6 px corner at 4x, no padding.
-        private const float ExpandedNoteBorderPixels = 24f;
-
         public NodeData Data { get; private set; }
         public XRGrabInteractable Grab { get; private set; }
         public Rigidbody Body { get; private set; }
+        public CrystalBallVisual Crystal { get; private set; }
+        public Vector3 LastThrowVelocity { get; private set; }
         public bool IsTossed { get; private set; }
         public bool Highlighted { get; set; }
         public event Action<TopicBall> Selected;
+        public event Action<TopicBall> Grabbed;
         public event Action<TopicBall> EnterRequested;
         public event Action<TopicBall> Tossed;
         private TextMeshPro _note;
         private Transform _orb;
         private Transform _star;
-        private SpriteRenderer _core, _glow, _ring, _sparks, _orbit, _paper;
+        private SpriteRenderer _core, _glow, _ring, _sparks, _orbit;
         private SpriteRenderer[] _layers = Array.Empty<SpriteRenderer>();
-        private string _paperText;
-        private float _paperFontSize;
-        private Vector2 _paperBox;
-        private Bounds _textBounds;
-        private bool _selected;
+        private bool _selected, _draft;
+        public bool HasWorldTravelHint { get; private set; }
         private float _heldSince;
-        private float _nearFaceSince = -1;
+        private bool _releasePending, _travelPending;
+        private float _releasedAfter;
+        private Vector3 _releaseFromHead, _releaseGaze, _releaseVelocity;
+        private float _scale = .15f;
+        private string _previewImage;
         private float _tossedAt;
-        private Vector3 _tossStartScale;
-        private const int MotionSampleCount = 16;
-        private readonly Vector3[] _motionPositions = new Vector3[MotionSampleCount];
-        private readonly float[] _motionTimes = new float[MotionSampleCount];
-        private int _motionWrite;
-        private int _motionCount;
-        private Vector3 _releaseVelocity;
-        private int _releaseFrame = -1;
-        private bool _entered;
+        private Vector3 _tossStartScale, _tossStarStartScale;
 
         public void Initialize(NodeData data, Material material)
         {
@@ -60,11 +50,9 @@ namespace Zap.Constellation
             Body.angularDamping = 2f;
             Body.interpolation = RigidbodyInterpolation.Interpolate;
             Body.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
-            Body.linearVelocity = Vector3.zero;
-            Body.angularVelocity = Vector3.zero;
-            Body.constraints = RigidbodyConstraints.FreezeAll;
-            GetComponent<SphereCollider>().radius = .065f;
-            Grab = GetComponent<XRGrabInteractable>();
+            GetComponent<SphereCollider>().radius = .085f;
+            Grab = GetComponent<TravelGrabInteractable>();
+            ((TravelGrabInteractable)Grab).Detached += CaptureRelease;
             Grab.movementType = XRBaseInteractable.MovementType.VelocityTracking;
             Grab.throwOnDetach = true;
             Grab.forceGravityOnDetach = false;
@@ -74,8 +62,13 @@ namespace Zap.Constellation
             Grab.selectExited.AddListener(OnRelease);
             Grab.hoverEntered.AddListener(_ => Selected?.Invoke(this));
             var theme = ZapTheme.Current;
-            if (theme.nodeCore != null) BuildStar(theme);
-            else BuildOrb(material, theme);
+            // Keep a functional crystal for previews, recording and journey effects in every art mode.
+            var orb = new GameObject("Crystal world");
+            _orb = orb.transform;
+            _orb.SetParent(transform, false);
+            _orb.localScale = Vector3.one * _scale;
+            Crystal = orb.AddComponent<CrystalBallVisual>();
+            if (theme.useStarNodeArt && theme.nodeCore != null) BuildStar(theme);
             var note = new GameObject("Topic note");
             note.transform.SetParent(transform, false);
             _note = note.AddComponent<TextMeshPro>();
@@ -84,21 +77,10 @@ namespace Zap.Constellation
             _note.overflowMode = TextOverflowModes.Ellipsis;
             _note.richText = false;
             _note.sortingOrder = 1;
-            // The paper sits behind the text; the text faces away from its forward axis.
-            _paper = ZapArt.Layer(note.transform, "Note paper", theme.noteBackground, 0, CompactNoteBorderPixels);
-            if (_paper != null) _paper.transform.localPosition = new Vector3(0, 0, .001f);
+            _note.fontSize = theme.topicTextSize;
+            _note.rectTransform.sizeDelta = theme.noteBoxSize;
+            _note.color = theme.textColor;
             Refresh();
-        }
-
-        private void BuildOrb(Material material, ZapTheme theme)
-        {
-            var orb = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            orb.name = "Topic orb";
-            Destroy(orb.GetComponent<Collider>());
-            _orb = orb.transform;
-            _orb.SetParent(transform, false);
-            _orb.localScale = Vector3.one * theme.nodeDiameter;
-            orb.GetComponent<Renderer>().sharedMaterial = material;
         }
 
         private void BuildStar(ZapTheme theme)
@@ -116,72 +98,85 @@ namespace Zap.Constellation
                 if (layer != null) layer.transform.localPosition = Vector3.back * (.0005f * layer.sortingOrder);
         }
 
-        // The sphere, or the star artwork when the theme has it.
-        private Transform Visual => _orb != null ? _orb : _star;
-
         public void SetSelected(bool value) { _selected = value; }
-        public void Refresh() { if (_note != null) _note.text = Data.topic; }
+        public void SetWorldTravelHint(bool value)
+        {
+            HasWorldTravelHint = value;
+            UpdateNoteBox(ZapTheme.Current);
+        }
+        private void UpdateNoteBox(ZapTheme theme)
+        {
+            _note.rectTransform.sizeDelta = HasWorldTravelHint ? Vector2.Max(theme.noteBoxSize, new Vector2(.72f,.48f)) : theme.noteBoxSize;
+        }
+        public void SetDraft(bool draft)
+        {
+            _draft = draft;
+            if (draft)
+            {
+                _orb.gameObject.SetActive(true);
+                if (_star != null) _star.gameObject.SetActive(false);
+            }
+            Grab.enabled = !draft;
+            if (draft) Body.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
+            Body.isKinematic = draft;
+            if (!draft) Body.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+            Crystal.SetRecording(draft);
+        }
+        public void SetData(NodeData data) { Data = data; Refresh(); }
+        public void Refresh()
+        {
+            if (_note != null) _note.text = Data.topic;
+            // Refresh thumbnails lazily when the node is visible nearby.
+            _previewImage = null;
+            if (string.IsNullOrEmpty(Data.image)) Crystal.SetPreview("");
+        }
         private void OnGrab(SelectEnterEventArgs args)
         {
-            _releaseFrame = -1;
-            _motionWrite = 0;
-            _motionCount = 0;
             Body.constraints = RigidbodyConstraints.None;
             _heldSince = Time.unscaledTime;
-            _entered = false;
+            _releasePending = _travelPending = false;
+            LastThrowVelocity = Vector3.zero;
             Selected?.Invoke(this);
+            Grabbed?.Invoke(this);
         }
         private void OnRelease(SelectExitEventArgs args)
         {
-            _nearFaceSince = -1;
-            _releaseVelocity = VelocityFromMotion();
-            _releaseFrame = Time.frameCount;
+            // Disabling a node during travel must never start another journey.
+            if (args.isCanceled || !isActiveAndEnabled || IsTossed) return;
+            _releasePending = Camera.main != null;
+            _releasedAfter = Time.unscaledTime - _heldSince;
+            if (_releasePending)
+            {
+                _releaseFromHead = transform.position - Camera.main.transform.position;
+                _releaseGaze = Camera.main.transform.forward;
+            }
         }
 
-        private void Update()
+        private void CaptureRelease(Vector3 velocity)
         {
-            // Not set up yet: Initialize has not run.
-            if (Grab == null) return;
-            if (Grab.isSelected)
-            {
-                _motionPositions[_motionWrite] = transform.position;
-                _motionTimes[_motionWrite] = Time.time;
-                _motionWrite = (_motionWrite + 1) % MotionSampleCount;
-                if (_motionCount < MotionSampleCount) _motionCount++;
-            }
-            if (_releaseFrame < 0 || Time.frameCount <= _releaseFrame || Grab.isSelected) return;
-            _releaseFrame = -1;
-            Release(_releaseVelocity);
+            // Capture XRI's actual detach velocity before room collisions or locomotion can change it.
+            _travelPending = _releasePending && IsTravelThrow(velocity, _releaseFromHead, _releaseGaze, _releasedAfter);
+            _releaseVelocity = velocity;
+            _releasePending = false;
         }
 
-        private Vector3 VelocityFromMotion()
+        public static bool IsTravelThrow(Vector3 velocity, Vector3 fromHead, Vector3 gaze, float heldSeconds)
         {
-            if (_motionCount < 2) return Vector3.zero;
-            int latest = (_motionWrite + MotionSampleCount - 1) % MotionSampleCount;
-            float latestTime = _motionTimes[latest];
-            float target = latestTime - .1f;
-            int best = -1;
-            float bestGap = float.MaxValue;
-            for (int age = 1; age < _motionCount; age++)
-            {
-                int index = (_motionWrite - 1 - age + MotionSampleCount * 2) % MotionSampleCount;
-                float gap = Mathf.Abs(_motionTimes[index] - target);
-                if (gap < bestGap)
-                {
-                    bestGap = gap;
-                    best = index;
-                }
-            }
-            float dt = latestTime - _motionTimes[best];
-            if (dt < .02f) return Vector3.zero;
-            return (_motionPositions[latest] - _motionPositions[best]) / dt;
+            return heldSeconds >= .12f && velocity.sqrMagnitude >= 1.35f*1.35f
+                && fromHead.sqrMagnitude > .04f
+                && Vector3.Dot(velocity.normalized, fromHead.normalized) > .45f
+                && Vector3.Dot(velocity.normalized, gaze.normalized) > .2f;
         }
+
+        private void OnDisable() { _releasePending = _travelPending = false; }
 
         public static bool IsToss(Vector3 releaseVelocity)
         {
             return releaseVelocity.sqrMagnitude >= TossSpeed * TossSpeed;
         }
 
+        // Explicit place/discard API retained for callers that requested removal.
+        // XR selectExited uses CheckRelease above: a physical throw travels, never deletes.
         public void Release(Vector3 velocity)
         {
             if (IsTossed) return;
@@ -193,6 +188,7 @@ namespace Zap.Constellation
                 return;
             }
 
+            _releasePending = _travelPending = false;
             IsTossed = true;
             Tossed?.Invoke(this);
             Body.constraints = RigidbodyConstraints.None;
@@ -201,23 +197,35 @@ namespace Zap.Constellation
             GetComponent<SphereCollider>().enabled = false;
             _note.gameObject.SetActive(false);
             _tossedAt = Time.unscaledTime;
-            var visual = Visual;
-            _tossStartScale = visual != null ? visual.localScale : Vector3.one;
+            _tossStartScale = _orb != null ? _orb.localScale : Vector3.one;
+            _tossStarStartScale = _star != null ? _star.localScale : Vector3.one;
         }
 
         private void FixedUpdate()
         {
             if (Body == null || Grab.isSelected || Body.isKinematic) return;
             Body.linearVelocity = Vector3.ClampMagnitude(Body.linearVelocity, 8);
+            if (Body.linearVelocity.sqrMagnitude < .0009f) Body.linearVelocity = Vector3.zero;
         }
 
         private void LateUpdate()
         {
+            // Dispatch outside XRI's detach callback: travel may deactivate/reparent this ball.
+            if (_travelPending)
+            {
+                _travelPending = false;
+                if (!Grab.isSelected && !IsTossed)
+                {
+                    LastThrowVelocity = _releaseVelocity;
+                    EnterRequested?.Invoke(this);
+                    if (!isActiveAndEnabled) return;
+                }
+            }
             if (IsTossed)
             {
                 float progress = Mathf.Clamp01((Time.unscaledTime - _tossedAt) / .5f);
-                var visual = Visual;
-                if (visual != null) visual.localScale = Vector3.Lerp(_tossStartScale, Vector3.zero, progress);
+                if (_orb != null) _orb.localScale = Vector3.Lerp(_tossStartScale, Vector3.zero, progress);
+                if (_star != null) _star.localScale = Vector3.Lerp(_tossStarStartScale, Vector3.zero, progress);
                 if (progress >= 1f) Destroy(gameObject);
                 return;
             }
@@ -225,26 +233,32 @@ namespace Zap.Constellation
             if (Data == null || camera == null) return;
             var theme = ZapTheme.Current;
             bool held = Grab.isSelected;
-            if (_orb != null) _orb.localScale = Vector3.one * (Highlighted ? theme.nodeSelectedDiameter * HighlightScale : (_selected ? theme.nodeSelectedDiameter : theme.nodeDiameter));
-            if (_star != null) UpdateStar(theme, camera.transform.position, held);
+            float targetScale = (held ? .18f : (_selected || Highlighted) ? .165f : .15f) * (Highlighted ? HighlightScale : 1f);
+            _scale = Mathf.MoveTowards(_scale, targetScale, Time.unscaledDeltaTime*.09f);
+            _orb.localScale = Vector3.one * _scale;
+            Crystal.SetEmphasis(held, _selected || Highlighted);
             var distance = Vector3.Distance(transform.position, camera.transform.position);
-            _note.transform.position = transform.position + Vector3.down * theme.noteOffsetBelowNode;
+            if (distance < 2 && _previewImage != Data.image)
+            { _previewImage = Data.image; Crystal.SetPreview(Data.image); }
+            // Optional designer stars decorate unpreviewed nodes; recorded drafts and world previews stay crystals.
+            bool showStar = _star != null && theme.useStarNodeArt && !_draft && !Crystal.PreviewReady;
+            _orb.gameObject.SetActive(!showStar);
+            if (_star != null)
+            {
+                _star.gameObject.SetActive(showStar);
+                if (showStar) UpdateStar(theme, camera.transform.position, held);
+            }
+            _note.transform.position = transform.position + Vector3.down * Mathf.Max(theme.noteOffsetBelowNode, _scale * .5f + .04f);
             _note.transform.rotation = Quaternion.LookRotation(_note.transform.position - camera.transform.position);
-            _note.rectTransform.sizeDelta = theme.noteBoxSize;
-            _note.color = _paper != null ? theme.ink : theme.textColor;
+            UpdateNoteBox(theme);
+            _note.color = theme.textColor;
             if (theme.font != null) _note.font = theme.font;
             bool showSummary = (held || (_selected && distance < theme.summaryShowDistance)) && !string.IsNullOrEmpty(Data.summary);
             _note.text = showSummary ? Data.topic + "\n" + Data.summary : Data.topic;
-            _note.fontSize = showSummary ? theme.summaryTextSize : theme.topicTextSize;
+            if (HasWorldTravelHint) _note.text += "\nPoint + X to enter · or grip and throw";
+            _note.fontSize = showSummary || HasWorldTravelHint ? theme.summaryTextSize : theme.topicTextSize;
             _note.gameObject.SetActive(distance < theme.noteHideDistance);
-            if (_paper != null && _note.gameObject.activeSelf) UpdatePaper(theme, showSummary, held);
-            if (held && !_entered && Time.unscaledTime - _heldSince > .8f && distance < .26f)
-            {
-                if (_nearFaceSince < 0) _nearFaceSince = Time.unscaledTime;
-                if (Time.unscaledTime - _nearFaceSince > .65f)
-                { _entered = true; EnterRequested?.Invoke(this); }
-            }
-            else _nearFaceSince = -1;
+            _note.maxVisibleLines = HasWorldTravelHint ? 5 : showSummary ? 4 : 2;
         }
 
         private void UpdateStar(ZapTheme theme, Vector3 cameraPosition, bool held)
@@ -268,32 +282,5 @@ namespace Zap.Constellation
                 if (layer != null) layer.color = theme.nodeColor;
         }
 
-        private void UpdatePaper(ZapTheme theme, bool expanded, bool held)
-        {
-            expanded &= theme.noteExpanded != null;
-            Texture2D texture = expanded ? theme.noteExpanded
-                : held && theme.noteBackgroundHeld != null ? theme.noteBackgroundHeld
-                : _selected && theme.noteBackgroundPointed != null ? theme.noteBackgroundPointed
-                : theme.noteBackground;
-            var sprite = ZapArt.GetSprite(texture, expanded ? ExpandedNoteBorderPixels : CompactNoteBorderPixels);
-            if (_paper.sprite != sprite) _paper.sprite = sprite;
-            // Measure the text only when it changes.
-            if (_paperText != _note.text || _paperFontSize != _note.fontSize || _paperBox != theme.noteBoxSize)
-            {
-                _note.ForceMeshUpdate();
-                _textBounds = _note.textInfo.characterCount > 0 ? _note.textBounds : new Bounds();
-                _paperText = _note.text;
-                _paperFontSize = _note.fontSize;
-                _paperBox = theme.noteBoxSize;
-            }
-            var bounds = _textBounds;
-            float inset = expanded ? 0f : CompactNoteInset;
-            float pad = theme.notePadding + inset;
-            var size = new Vector2(bounds.size.x + 2 * pad, bounds.size.y + 2 * pad);
-            if (expanded) size.x = Mathf.Max(size.x, theme.noteExpandedMinWidth);
-            else size.x = size.y = Mathf.Max(size.x, size.y, theme.noteMinSize + 2 * inset);
-            _paper.size = size;
-            _paper.transform.localPosition = new Vector3(bounds.center.x, bounds.center.y, .001f);
-        }
     }
 }

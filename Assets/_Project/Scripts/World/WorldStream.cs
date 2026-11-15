@@ -15,10 +15,33 @@ namespace Zap.World
         private RelayClient _relayClient;
         private DomeView _domeView;
         private Texture2D _texture;
+        private Texture2D _seed;
 
         private byte[] _pendingFrameBytes;
         private uint _pendingSeq;
         private bool _hasNewFrame;
+
+        public bool SetStartingImage(string base64)
+        {
+            _pendingFrameBytes = null; _hasNewFrame = false; LatestSeq = 0;
+            _domeView.SetProjection("", 0);
+            if (string.IsNullOrEmpty(base64))
+            {
+                _seed.Reinitialize(2,2); _seed.SetPixels(new[] { Color.black, Color.black, Color.black, Color.black }); _seed.Apply();
+                _domeView.SetSeed(_seed); return false;
+            }
+            try
+            {
+                var bytes = Convert.FromBase64String(base64);
+                if (!ImageConversion.LoadImage(_texture, bytes)) return false;
+                ImageConversion.LoadImage(_seed, bytes);
+                _domeView.SetTexture(_texture);
+                _domeView.SetSeed(_seed);
+                return true;
+            }
+            catch (Exception exception) when (exception is FormatException || exception is ArgumentException)
+            { return false; }
+        }
 
         private void Awake()
         {
@@ -31,6 +54,8 @@ namespace Zap.World
                 wrapMode = TextureWrapMode.Clamp,
                 filterMode = FilterMode.Bilinear
             };
+            _seed = new Texture2D(2, 2, TextureFormat.RGB24, false)
+            { name = "ZapSurround_Seed", wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear };
         }
 
         private void OnEnable()
@@ -91,6 +116,7 @@ namespace Zap.World
 
         private void OnDestroy()
         {
+            if (_seed != null) Destroy(_seed);
             if (_texture != null)
             {
                 Destroy(_texture);

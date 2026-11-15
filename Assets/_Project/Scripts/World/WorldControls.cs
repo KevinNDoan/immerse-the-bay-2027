@@ -12,6 +12,9 @@ namespace Zap.World
         public event Action<string> StatusChanged;
 
         public string PendingInstruction { get; private set; }
+        // The constellation owns local walking and teaching-object controls. Keep
+        // standalone steering available without polling the same input twice.
+        public MonoBehaviour InputOwner { get; set; }
 
         private WorldSession _session;
         private WorldStream _stream;
@@ -58,6 +61,7 @@ namespace Zap.World
         private void Update()
         {
             if (_session == null) return;
+            if (InputOwner != null && InputOwner.isActiveAndEnabled) return;
 
             _input.Poll();
 

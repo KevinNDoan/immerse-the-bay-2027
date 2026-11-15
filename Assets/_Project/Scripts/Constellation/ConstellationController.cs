@@ -34,7 +34,7 @@ namespace Zap.Constellation
         private string _voiceAction;
         private string _savePath;
         private string _typed = "Volcanoes";
-        private bool _busy, _recordButton, _trigger, _worldVisible, _pulling, _dirty;
+        private bool _busy, _recordButton, _trigger, _worldVisible, _pulling, _dirty, _lineTextured;
         private Vector3 _pullMidpoint;
         private float _pullDistance, _lastSave, _recordStart;
 
@@ -52,7 +52,10 @@ namespace Zap.Constellation
             _content.SetParent(transform, false);
             _material = new Material(Shader.Find("Zap/Solid"));
             _material.SetColor("_BaseColor", ZapTheme.Current.nodeColor);
-            _lineMaterial = new Material(Shader.Find("Zap/Solid"));
+            var lineImage = ZapTheme.Current.lineImage;
+            _lineTextured = lineImage != null && ZapArt.Material != null;
+            _lineMaterial = _lineTextured ? new Material(ZapArt.Material) : new Material(Shader.Find("Zap/Solid"));
+            if (_lineTextured) _lineMaterial.SetTexture("_MainTex", lineImage);
             _lineMaterial.SetColor("_BaseColor", ZapTheme.Current.lineColor);
             _voice = gameObject.AddComponent<VoiceRecorder>();
             _voice.Error += SetStatus;
@@ -299,6 +302,8 @@ namespace Zap.Constellation
                 var obj = new GameObject("Connection"); obj.transform.SetParent(_content, false);
                 var line = obj.AddComponent<LineRenderer>();
                 line.sharedMaterial = _lineMaterial; line.positionCount = 2;
+                // The line image repeats along the line instead of stretching.
+                if (_lineTextured) line.textureMode = LineTextureMode.Tile;
                 _lines.Add(line);
             }
         }
@@ -307,11 +312,17 @@ namespace Zap.Constellation
             var theme = ZapTheme.Current;
             _material.SetColor("_BaseColor", theme.nodeColor);
             _lineMaterial.SetColor("_BaseColor", theme.lineColor);
+            float width = _lineTextured ? theme.lineImageWidth : theme.lineWidth;
+            // One repeat of the image is as long as its aspect ratio times the line width.
+            var tiling = Vector2.one;
+            if (_lineTextured && theme.lineImage != null && width > 0)
+                tiling.x = theme.lineImage.height / (theme.lineImage.width * width);
             for (int i = 0; i < _edges.Count; i++)
             {
                 var from = _balls.FirstOrDefault(b => b.Data.id == _edges[i].from);
                 var to = _balls.FirstOrDefault(b => b.Data.id == _edges[i].to);
-                _lines[i].widthMultiplier = theme.lineWidth;
+                _lines[i].widthMultiplier = width;
+                if (_lineTextured) _lines[i].textureScale = tiling;
                 _lines[i].enabled = from && to;
                 if (from && to) { _lines[i].SetPosition(0, from.transform.position); _lines[i].SetPosition(1, to.transform.position); }
             }

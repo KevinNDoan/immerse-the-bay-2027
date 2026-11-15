@@ -46,11 +46,44 @@ namespace Zap.Core
         [Tooltip("The card never comes closer to the face than this.")]
         public float controlsMinDistanceFromFace = .6f;
 
-        [Header("Images and font (empty until the designer adds them)")]
+        [Header("Star images (used when Star core is set; otherwise a plain ball)")]
+        [Tooltip("Real diameter of the star core when idle. Figma 64 px = 3.2 cm.")]
+        public float starCoreDiameter = .032f;
+        [Tooltip("Layer diameters as multiples of the idle core.")]
+        public float starGlowScale = 4f;
+        public float starRingScale = 2f;
+        public float starSparksScale = 2.6f;
+        public float starOrbitScale = 4f;
+        [Tooltip("Pointed at: core and glow grow by these factors.")]
+        public float starPointedCoreScale = 1.1f;
+        public float starPointedGlowScale = 1.05f;
+        [Tooltip("Grabbed: core and glow grow by these factors.")]
+        public float starGrabbedCoreScale = 1.3f;
+        public float starGrabbedGlowScale = 1.2f;
+
+        [Header("Note paper (used when Note background is set)")]
+        [Tooltip("Space between the text and the paper edge.")]
+        public float notePadding = .008f;
+        [Tooltip("Smallest side of the square compact note. Figma 200 px = 10 cm.")]
+        public float noteMinSize = .10f;
+        [Tooltip("Smallest width of the expanded note. Figma 320 px = 16 cm.")]
+        public float noteExpandedMinWidth = .16f;
+
+        [Header("Line image (used when Line image is set)")]
+        [Tooltip("Full width of the line image including its halo. Figma 16 px = 8 mm.")]
+        public float lineImageWidth = .008f;
+
+        [Header("Images and font (filled by ZAP > Fill Theme Images)")]
+        public Texture2D nodeCore;
         public Texture2D nodeGlow;
         public Texture2D nodeRing;
+        public Texture2D nodeSparks;
+        public Texture2D nodeOrbit;
         public Texture2D lineImage;
         public Texture2D noteBackground;
+        public Texture2D noteBackgroundPointed;
+        public Texture2D noteBackgroundHeld;
+        public Texture2D noteExpanded;
         public TMP_FontAsset font;
 
         private static ZapTheme _current;

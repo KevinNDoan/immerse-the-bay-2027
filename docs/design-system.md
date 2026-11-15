@@ -427,6 +427,17 @@ Corner sizes follow section 4 of this brief. They were not measured again in Fig
 | Cards and messages (`controls_*`, `title_card`, `message_*`) | 16 px | 64 px (`title_card`: 16 px at 1×) |
 | Pills (`label_suggested`, `voice_heard_pill`, `marker_pill`, `message_*`) | fully round | half the height |
 
-### Not wired yet
+### What the app uses so far
 
-The images are in place, but the app does not use them yet. The theme has slots only for `nodeGlow`, `nodeRing`, `lineImage` and `noteBackground`. The core developer needs to add slots for the other pieces and wire them in. The import settings are listed in the newest design handoff in `docs/handoffs/`.
+Wired in on 2026-11-14 on `design/nodes`, with the core developer's agreement:
+
+- **Star:** `star_core`, `star_glow`, `star_ring`, `star_sparks` and `star_orbit` replace the plain white ball.
+  - The ring shows on the selected star.
+  - The sparks show while the star is held.
+  - The orbit shows once the star's world has been visited.
+- **Note:** `note_compact`, `note_compact_pointed`, `note_compact_held` and `note_expanded` sit behind the topic text. On paper, the text turns Ink.
+- **Line:** `line_soft` repeats along every connection.
+
+The theme gets these images when Unity imports them, and **ZAP > Fill Theme Images** refills them. Sizes are in the theme under "Star images", "Note paper" and "Line image". If a slot is empty, that piece falls back to the old look.
+
+Not used yet: everything else in `Art/UI/`, plus `star_ring_dashed`, `star_sparkle`, `line_dash`, `line_spark` and the bolts. The app has no suggested stars, drawn-line animation, voice indicator, markers or messages for them to go on yet.

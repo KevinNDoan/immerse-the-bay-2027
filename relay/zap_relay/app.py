@@ -18,8 +18,12 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPExcept
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from .config import Settings, load_settings
-from .sources import ReactorSource, StandinSource, WorldSource
+from .sources import StandinSource, WorldSource
 from .nodes import SpeechService, NodeService, MAX_AUDIO_BYTES
+from .worlds import WorldPreparation, validate_plan
+from .nodes import _text
+from .surround import SurroundSource
+from .spatial import SpatialPreparation
 
 HEADER = struct.Struct("<BIQ")
 STATIC_INDEX = Path(__file__).with_name("static") / "index.html"
@@ -57,6 +61,7 @@ class World:
         self.event_prompt = ""
         self.owner: Client | None = None
         self.enter_task: asyncio.Task | None = None
+        self._last_view_mask = -1
 
     async def begin_enter(self, topic: str, prompt: str, image: str) -> None:
         await self._cancel_enter()
@@ -132,7 +137,7 @@ class World:
 
     def _compose_prompt(self) -> str:
         parts = [self.scene_prompt, self.camera_prompt, self.event_prompt]
-        return "\n".join(part for part in parts if part) + "\na single unbroken take"
+        return "\n".join(part for part in parts if part) + "\nKeep the established scene, a single unbroken take."
 
     async def exit(self) -> None:
         await self._cancel_enter()
@@ -190,6 +195,10 @@ class World:
         if self.state == "connecting":
             self.state = "streaming"
             await self._broadcast_control(self.status_message())
+        mask = getattr(self.source, "live_views", -1)
+        if mask != self._last_view_mask:
+            self._last_view_mask = mask
+            await self._broadcast_control(self.status_message())
         message = HEADER.pack(1, seq, time.monotonic_ns() // 1_000) + jpeg
         self.latest_jpeg = jpeg
         async with self.frame_changed:
@@ -225,21 +234,27 @@ class World:
                 yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n"
 
     def health(self) -> dict[str, Any]:
-        return {
+        result = {
             "ok": True,
             "mode": self.settings.mode,
             "state": self.state,
             "model": self.settings.model if self.settings.mode == "live" else "",
         }
+        if isinstance(self.source, SurroundSource):
+            result.update(projection="multiview", liveViews=self.source.live_views,
+                          unavailableViews=len(self.source.failures))
+        return result
 
-    def status_message(self) -> dict[str, str]:
-        return {"t": "status", "state": self.state, "detail": self.detail}
+    def status_message(self) -> dict[str, Any]:
+        status = {"t": "status", "state": self.state, "detail": self.detail}
+        if isinstance(self.source, SurroundSource) and self.state in {"connecting", "streaming"}:
+            status.update(projection="multiview", liveViews=self.source.live_views)
+        return status
 
     def _make_source(self) -> WorldSource:
         args = (self.on_video, self.on_audio, self.on_error)
         if self.settings.mode == "live":
-            return ReactorSource(self.settings.api_key, self.settings.model, *args,
-                                 max_width=self.settings.max_width, resolution=self.settings.resolution)
+            return SurroundSource(self.settings.api_key, self.settings.model, *args)
         return StandinSource(*args)
 
     async def _broadcast_control(self, message: dict[str, Any]) -> None:
@@ -267,6 +282,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     world = World(configured)
     speech = SpeechService(configured.speech_model)
     nodes = NodeService(configured)
+    preparation = WorldPreparation(configured)
+    spatial = SpatialPreparation(configured, preparation)
     speech_lock = asyncio.Lock()
 
     @asynccontextmanager
@@ -276,18 +293,91 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             yield
         finally:
             await world.kill()
+            await preparation.close()
+            await spatial.close()
 
     app = FastAPI(lifespan=lifespan)
     app.state.world = world
     app.state.speech = speech
     app.state.nodes = nodes
+    app.state.preparation = preparation
+    app.state.spatial = spatial
+
+    @app.post("/world/prepare")
+    async def prepare_world(request: Request) -> dict:
+        try:
+            payload = json.loads(await _bounded_body(request, 32000))
+            if not isinstance(payload, dict):
+                raise ValueError("Expected a JSON object.")
+            return await (spatial.prepare(payload) if spatial.enabled else preparation.prepare(payload))
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+        except (RuntimeError, httpx.HTTPError):
+            raise HTTPException(503, "World preparation is unavailable. Please try again.") from None
+
+    @app.get("/world/jobs/{key}")
+    async def world_job(key: str) -> dict:
+        try: return spatial.status(key)
+        except ValueError: raise HTTPException(400, "Invalid world job.") from None
+        except FileNotFoundError: raise HTTPException(404, "World job not found.") from None
+
+    @app.get("/world/preview")
+    async def world_preview() -> dict:
+        return await asyncio.to_thread(spatial.preview)
+
+    @app.get("/world/assets/{key}/{filename}")
+    async def world_asset(key: str, filename: str):
+        try: return FileResponse(spatial.asset(key, filename))
+        except ValueError: raise HTTPException(400, "Invalid world asset.") from None
+        except FileNotFoundError: raise HTTPException(404, "World asset not found.") from None
+
+    @app.post("/world/study")
+    async def update_study(request: Request) -> dict:
+        try:
+            payload = json.loads(await _bounded_body(request, 64000))
+            if not isinstance(payload, dict):
+                raise ValueError("Expected a JSON object.")
+            current = payload.get("current")
+            if current is not None:
+                current = validate_plan(current)
+            preview = await asyncio.to_thread(spatial.preview) if spatial.enabled else {}
+            return await preparation.plan(_text(payload.get("topic"), 160),
+                _text(payload.get("context"), 8000), _text(payload.get("instruction"), 2000), current,
+                environment_image=preview.get("image", ""))
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+        except (RuntimeError, httpx.HTTPError):
+            raise HTTPException(503, "The study model could not be updated. Your current model is still available.") from None
 
     @app.get("/capabilities")
     async def capabilities() -> dict:
         import importlib.util
         return {"orbisMode": configured.mode, "orbisConfigured": bool(configured.api_key),
+                "worldProvider": "worldlabs" if spatial.enabled else "orbis",
                 "speechInstalled": importlib.util.find_spec("faster_whisper") is not None,
                 "speechModel": configured.speech_model, "nodeAiConfigured": bool(configured.openai_key)}
+
+    @app.post("/world/explore")
+    async def explore_objects(request: Request) -> dict:
+        try:
+            payload = json.loads(await _bounded_body(request, 160000))
+            if not isinstance(payload, dict): raise ValueError("Expected a JSON object.")
+            current = payload.get("current")
+            if current is not None: current = validate_plan(current)
+            objects = payload.get("objects", [])
+            if not isinstance(objects, list) or len(objects) > 6: raise ValueError("Invalid object collection.")
+            from .study_models import number
+            state = {"step": int(number(payload.get("step", -1), -1, 4)), "parameter": number(payload.get("parameter", 0), 0, 1)}
+            result = await preparation.explore(_text(payload.get("topic"), 160), _text(payload.get("context"), 8000),
+                _text(payload.get("instruction"), 2000), current, _text(payload.get("focused", ""), 150, required=False),
+                [_text(title, 120) for title in objects], state)
+            if result["action"] == "add" and len(objects) >= 6:
+                return {"action": "answer", "answer": "This space has six objects. You can keep exploring or ask me to change the selected object.", "model": None}
+            return result
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+        except (RuntimeError, httpx.HTTPError):
+            raise HTTPException(503, "Object requests need OpenAI on the laptop. Your existing objects are still available.") from None
 
     @app.post("/speech/transcribe")
     async def transcribe(request: Request) -> dict:

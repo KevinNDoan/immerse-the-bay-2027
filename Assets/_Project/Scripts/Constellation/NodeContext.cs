@@ -31,15 +31,15 @@ namespace Zap.Constellation
         {
             var parents = Parents(node, nodes);
             var text = new StringBuilder();
-            text.AppendLine("Current study topic: " + Clip(node.topic, 160));
-            text.AppendLine(Clip(node.worldPrompt, 1500));
+            text.AppendLine("Current idea (primary): " + Clip(node.topic, 160));
+            text.AppendLine("World description: " + Clip(node.worldPrompt, 1500));
             if (parents.Length > 0)
             {
-                text.AppendLine("The following is the student's current learning path. Make the scene specifically relevant to these preceding topics and their relationships to the current topic:");
+                text.AppendLine("Optional exploration history. These ideas explain how the user arrived here; they may be loosely related or unrelated:");
                 foreach (var parent in parents)
                     text.AppendLine("- " + Clip(parent.topic, 100) + ": " + Clip(parent.summary, 180));
             }
-            text.Append("Show a coherent environment about the current topic in this context, not unrelated scenery. Slow steady camera, no text overlays, a single unbroken take.");
+            text.Append("Build a self-contained world for the current idea. The current idea takes priority. Use earlier ideas only to clarify an ambiguous follow-up or an explicitly requested connection. A clear new subject may have its own setting and theme; do not force every earlier topic into it. Slow steady camera, no text overlays, a single unbroken take.");
             return text.ToString();
         }
 

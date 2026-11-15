@@ -25,6 +25,12 @@ class Settings:
     speech_model: str = "base.en"
     openai_key: str = ""
     node_model: str = "gpt-6-luna"
+    panorama_model: str = "gpt-image-2"
+    worldlabs_key: str = ""
+    worldlabs_model: str = "marble-1.1"
+    world_provider: str = "auto"
+    world_generation_enabled: bool = False
+    world_test_world_id: str = ""
 
     def __repr__(self) -> str:
         return f"Settings(mode={self.mode!r}, model={self.model!r}, port={self.port})"
@@ -56,7 +62,13 @@ def load_settings(env_file: Path | None = None) -> Settings:
                     max_width=max_width, resolution=_text("ORBIS_RESOLUTION", ""),
                     speech_model=_text("SPEECH_MODEL", "base.en"),
                     openai_key=_text("OPENAI_API_KEY", ""),
-                    node_model=_text("NODE_MODEL", "gpt-6-luna"))
+                    node_model=_text("NODE_MODEL", "gpt-6-luna"),
+                    panorama_model=_text("PANORAMA_MODEL", "gpt-image-2", empty_is_default=False),
+                    worldlabs_key=_text("WORLD_LABS_API_KEY", ""),
+                    worldlabs_model=_text("WORLD_LABS_MODEL", "marble-1.1"),
+                    world_provider=_text("WORLD_PROVIDER", "auto"),
+                    world_generation_enabled=_text("WORLD_GENERATION_ENABLED", "false").lower() == "true",
+                    world_test_world_id=_text("WORLD_TEST_WORLD_ID", ""))
 
 
 def _text(name: str, default: str, *, empty_is_default: bool = True) -> str:

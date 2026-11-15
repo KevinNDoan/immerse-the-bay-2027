@@ -22,10 +22,29 @@ namespace Zap.Constellation
         private readonly List<TopicBall> _balls = new List<TopicBall>();
         private readonly List<NodeEdge> _edges = new List<NodeEdge>();
         private readonly List<LineRenderer> _lines = new List<LineRenderer>();
+        private readonly Dictionary<TopicBall, Vector3> _branchPositions = new Dictionary<TopicBall, Vector3>();
+        private readonly HashSet<TopicBall> _previewRequests = new HashSet<TopicBall>();
         private readonly ControllerActions _input = new ControllerActions();
+        private readonly WorldNavigation _navigation = new WorldNavigation();
+        private StudyWorkspace _space;
+        private StudyExhibit _study => _space?.Current;
+        private TopicBall _draftBall;
+        private GeneratedEnvironment _environment;
+        private WorldJourney _journey;
+        private TopicBall _branchSelection;
+        private float _loadingStarted;
+        private bool InWorld => (_environment != null && _environment.IsVisible) || (_world != null && _world.IsEntered);
+        private bool WorldReady => (_environment != null && _environment.IsVisible) || (_world != null && _world.State == "streaming");
+        private bool Travelling => _journey != null && _journey.IsActive;
+        private bool _preparingWorld;
+        private int _worldRequest;
+        private UnityWebRequest _preparationRequest;
+        private string _worldContext;
+        private int _operationVersion;
+        private GameObject _voidStars;
         private VoiceRecorder _voice;
         private WorldSession _world;
-        private Transform _left, _right, _content;
+        private Transform _left, _right, _content, _branches;
         private Material _material;
         private TextMeshPro _hud;
         private TopicBall _voiceTarget, _worldNode, _lineStart;
@@ -50,9 +69,14 @@ namespace Zap.Constellation
             _savePath = Path.Combine(Application.persistentDataPath, "zap-constellation.json");
             _content = new GameObject("Stars and connections").transform;
             _content.SetParent(transform, false);
+            _branches = new GameObject("Ideas created inside this world").transform;
+            _branches.SetParent(transform, false);
             _material = new Material(Shader.Find("Zap/Solid"));
             _material.SetColor("_BaseColor", Color.white);
             _voice = gameObject.AddComponent<VoiceRecorder>();
+            _space = gameObject.AddComponent<StudyWorkspace>();
+            _environment = gameObject.AddComponent<GeneratedEnvironment>();
+            _journey = gameObject.AddComponent<WorldJourney>();
             _voice.Error += SetStatus;
             var data = NodeStore.Load(_savePath);
             foreach (var node in data.nodes)
@@ -61,7 +85,11 @@ namespace Zap.Constellation
             RebuildLines();
             while ((_world = FindAnyObjectByType<WorldSession>()) == null) yield return null;
             _world.OnStatus += WorldStatus;
-            _world.OnError += e => SetStatus(e.detail);
+            _world.OnError += e =>
+            {
+                if (Travelling && !_preparingWorld) LeaveWorld();
+                SetStatus(e.detail);
+            };
             _world.OnPrompt += PromptReceived;
             var stream = _world.GetComponent<WorldStream>();
             stream.OnFrameDecoded += FrameReceived;
@@ -73,15 +101,17 @@ namespace Zap.Constellation
             if (_voice == null || _world == null) return;
             FindControllers();
             _input.Poll();
-            bool voiceHeld = _input.CreateHeld || _input.EditHeld;
-            if (voiceHeld && !_recordButton && !_busy)
+            bool voiceHeld = _input.CreateHeld || _input.EditHeld || _input.AskHeld;
+            if (voiceHeld && !_recordButton && !_busy && !Travelling)
             {
-                _voiceAction = _input.EditHeld ? "edit" : (_world.IsEntered ? "steer" : "create");
-                _voiceTarget = _world.IsEntered ? _worldNode : Current;
-                if (_world.IsEntered && _world.State != "streaming") SetStatus("Wait for this world to open before speaking.");
+                _voiceAction = _input.AskHeld ? "steer" : _input.EditHeld ? "edit" : "create";
+                _voiceTarget = InWorld ? (_voiceAction == "edit" ? _branchSelection ?? _worldNode : _worldNode) : Current;
+                if (_input.AskHeld && !InWorld) SetStatus("Enter a world before asking about its learning object.");
+                else if (InWorld && !WorldReady) SetStatus("Wait for this world to open before speaking.");
                 else if (_voiceAction == "edit" && _voiceTarget == null) SetStatus("Point at or grab a ball before holding B to edit.");
                 else
                 {
+                    if (_voiceAction == "create") BeginDraft();
                     _recordStart = Time.unscaledTime;
                     SetStatus(_voiceAction == "edit" ? "Listening: edit " + _voiceTarget.Data.topic : "Listening… release the button when finished.");
                     StartCoroutine(_voice.Begin());
@@ -91,14 +121,20 @@ namespace Zap.Constellation
             {
                 var wav = _voice.Finish();
                 if (wav != null) StartCoroutine(TranscribeAndApply(wav, _voiceAction, _voiceTarget));
+                else if (!_busy) CancelDraft();
             }
             _recordButton = voiceHeld;
+            UpdateDraft();
             _world.GetComponent<WorldAudio>()?.SetMuted(_voice.IsRecording || _voice.IsStarting);
-            if (_input.ExitDown && _world.IsEntered) LeaveWorld();
-            if (_input.EnterDown && !_world.IsEntered && Current != null && !_busy) EnterWorld(Current);
-            if (_worldVisible && !_world.IsEntered) ShowConstellation();
-            if (_world.IsEntered) UpdateWorldControls();
-            else if (!_busy && !_voice.IsRecording) UpdateConstellationControls();
+            if (_input.ExitDown && (InWorld || _preparingWorld || Travelling)) LeaveWorld();
+            if (_input.EnterDown && !InWorld && !_preparingWorld && Current != null && !_busy) EnterWorld(Current);
+            if ((_preparingWorld || Travelling) && Time.unscaledTime - _loadingStarted > 240)
+            { LeaveWorld(); SetStatus("This world is still preparing on the laptop. Re-enter to check its progress."); }
+            if (_worldVisible && !InWorld && !_preparingWorld) ShowConstellation();
+            foreach (var exhibit in _space.Objects)
+                if (exhibit.Grab != null) exhibit.Grab.enabled = !Travelling;
+            if (InWorld && !Travelling) UpdateWorldControls();
+            else if (!_worldVisible && !_busy && !_voice.IsRecording && !Travelling) UpdateConstellationControls();
             if (Time.unscaledTime - _lastSave > 3) Save();
             UpdateHud();
             UpdateLines();
@@ -106,23 +142,99 @@ namespace Zap.Constellation
 
         public TopicBall CreateBall(NodeData data, Vector3 position)
         {
-            var obj = new GameObject("Ball: " + data.topic);
-            obj.transform.SetParent(_content, false);
+            var draft = _draftBall; _draftBall = null;
+            var obj = draft != null ? draft.gameObject : new GameObject("Ball: " + data.topic);
+            if (draft != null) position = draft.transform.position;
+            bool branch = InWorld;
+            obj.transform.SetParent(branch ? _branches : _content, false);
             obj.transform.position = position;
             data.position = position;
-            var ball = obj.AddComponent<TopicBall>();
-            ball.Initialize(data, _material);
+            var ball = draft != null ? draft : obj.AddComponent<TopicBall>();
+            if (draft != null) { ball.SetData(data); ball.SetDraft(false); }
+            else ball.Initialize(data, _material);
             ball.Selected += Select;
             ball.EnterRequested += EnterWorld;
+            ball.Grabbed += RequestPreview;
             _balls.Add(ball);
+            if (branch)
+                _branchPositions[ball] = _worldNode.Data.position + new Vector3(.5f + _branchPositions.Count * .25f, -.2f, 0);
             _dirty = true;
             Select(ball);
+            RequestPreview(ball);
             return ball;
+        }
+
+        public TopicBall BeginDraft()
+        {
+            CancelDraft();
+            var obj = new GameObject("Listening orb"); obj.transform.SetParent(transform, false);
+            _draftBall = obj.AddComponent<TopicBall>();
+            _draftBall.Initialize(new NodeData { topic = "Listening…" }, _material);
+            _draftBall.SetDraft(true);
+            UpdateDraft();
+            _draftBall.Crystal.SetRecording(true);
+            return _draftBall;
+        }
+        public void CancelDraft()
+        {
+            if (_draftBall != null) { _draftBall.gameObject.SetActive(false); Destroy(_draftBall.gameObject); }
+            _draftBall = null;
+        }
+        private void UpdateDraft()
+        {
+            if (_draftBall == null || Camera.main == null) return;
+            var cam = Camera.main.transform;
+            _draftBall.transform.position = _right != null ? _right.position + _right.forward * .2f + Vector3.up * .04f :
+                cam.position + cam.forward * .55f + Vector3.down * .12f;
+            bool listening = _input.CreateHeld && !_busy;
+            _draftBall.Crystal.SetRecording(listening, _voice != null ? _voice.Level : 0);
+            _draftBall.Data.topic = _busy ? "Writing…" : "Listening…";
+        }
+
+        private void RequestPreview(TopicBall ball)
+        {
+            if (ball == null || ball.Data == null || !_previewRequests.Add(ball)) return;
+            StartCoroutine(LoadPreview(ball));
+        }
+
+        private void InvalidateChangedPreviews()
+        {
+            foreach (var ball in _balls)
+            {
+                string expected = "panorama-v2\n" + NodeContext.WorldPrompt(ball.Data, _balls.Select(b => b.Data));
+                if (ball.Data.imageContext == expected) continue;
+                ball.Data.image = ""; ball.Refresh(); _dirty = true;
+            }
+        }
+
+        private IEnumerator LoadPreview(TopicBall ball)
+        {
+            string context = NodeContext.WorldPrompt(ball.Data, _balls.Select(b => b.Data));
+            string stamp = "panorama-v2\n" + context;
+            if (ball.Data.imageContext == stamp && !string.IsNullOrEmpty(ball.Data.image))
+            { _previewRequests.Remove(ball); yield break; }
+            ball.Data.image = ""; ball.Refresh();
+            using var request = UnityWebRequest.Get(RelayConfig.BaseUrl.TrimEnd('/') + "/world/preview");
+            request.timeout = 15; yield return request.SendWebRequest();
+            _previewRequests.Remove(ball);
+            if (ball == null || request.result != UnityWebRequest.Result.Success ||
+                context != NodeContext.WorldPrompt(ball.Data, _balls.Select(b => b.Data))) yield break;
+            TranscriptImage preview = null;
+            try { preview = JsonUtility.FromJson<TranscriptImage>(request.downloadHandler.text); } catch (ArgumentException) { }
+            if (!string.IsNullOrEmpty(preview?.image))
+            {
+                ball.Data.image = preview.image; ball.Data.imageContext = stamp;
+                ball.Refresh(); _dirty = true;
+            }
         }
 
         public void Select(TopicBall ball)
         {
-            if (_worldVisible) return;
+            if (_worldVisible)
+            {
+                if (ball == null || !_branchPositions.ContainsKey(ball)) return;
+                _branchSelection = ball;
+            }
             if (Current != null) Current.SetSelected(false);
             Current = ball;
             if (Current != null) Current.SetSelected(true);
@@ -130,31 +242,38 @@ namespace Zap.Constellation
 
         public void SubmitText(string text, bool edit)
         {
-            if (_busy || _voice.IsRecording) return;
+            if (_busy || _voice.IsRecording || Travelling) return;
             if (edit && Current == null) { SetStatus("Select a ball first."); return; }
-            StartCoroutine(ApplyText(text, edit ? "edit" : (_world.IsEntered ? "steer" : "create"), _world.IsEntered ? _worldNode : Current));
+            StartCoroutine(ApplyText(text, edit ? "edit" : "create", InWorld ? (edit ? _branchSelection ?? _worldNode : _worldNode) : Current));
         }
 
         private IEnumerator TranscribeAndApply(byte[] wav, string action, TopicBall target)
         {
+            int operation = ++_operationVersion;
             _busy = true;
             SetStatus("Transcribing your voice…");
             string response = null;
             yield return Post("/speech/transcribe", wav, "audio/wav", result => response = result, 120);
-            if (response == null) { _busy = false; yield break; }
+            if (operation != _operationVersion) yield break;
+            if (response == null) { _busy = false; CancelDraft(); yield break; }
             var text = JsonUtility.FromJson<Transcript>(response)?.text;
-            if (string.IsNullOrWhiteSpace(text)) { SetStatus("No speech heard. Try again."); _busy = false; yield break; }
-            yield return ApplyText(text, action, target);
+            if (string.IsNullOrWhiteSpace(text)) { SetStatus("No speech heard. Try again."); _busy = false; CancelDraft(); yield break; }
+            yield return ApplyText(text, action, target, operation);
         }
 
-        private IEnumerator ApplyText(string text, string action, TopicBall target)
+        private IEnumerator ApplyText(string text, string action, TopicBall target, int operation = -1)
         {
+            if (operation < 0) operation = ++_operationVersion;
             _busy = true;
             if (action == "steer")
             {
-                if (_world.IsEntered) SendSteer("voice", text);
+                if (InWorld && target == _worldNode)
+                {
+                    SendSteer("voice", text);
+                    yield return UpdateStudy(text, _worldRequest);
+                }
                 else SetStatus("You left that world. Hold A to speak again.");
-                _busy = false;
+                if (operation == _operationVersion) _busy = false;
                 yield break;
             }
             if (action == "edit" && target == null) { SetStatus("That ball is no longer available."); _busy = false; yield break; }
@@ -167,6 +286,7 @@ namespace Zap.Constellation
                 .Select(n => new ParentNote { id = n.id, topic = n.topic, summary = n.summary }).ToArray();
             string response = null;
             yield return Post("/nodes/update", Encoding.UTF8.GetBytes(JsonUtility.ToJson(request)), "application/json", result => response = result, 50);
+            if (operation != _operationVersion) yield break;
             if (response != null)
             {
                 var result = JsonUtility.FromJson<NodeResult>(response);
@@ -187,23 +307,35 @@ namespace Zap.Constellation
                         if (parent != null) { _edges.Add(new NodeEdge { from = parent.Data.id, to = data.id }); RebuildLines(); }
                     }
                     _dirty = true;
+                    InvalidateChangedPreviews();
+                    RequestPreview(target);
                     Save();
                     SetStatus(action == "edit" ? "Updated " + data.topic : data.topic + " is ready. Grip to grab; release to throw.");
-                    if (action == "edit" && _world.IsEntered && target == _worldNode)
-                        SendSteer("scene", NodeContext.WorldPrompt(data, _balls.Select(b => b.Data)));
+                    if (action == "edit" && InWorld && target == _worldNode)
+                    {
+                        _worldContext = NodeContext.WorldPrompt(data, _balls.Select(b => b.Data));
+                        data.imageContext = "panorama-v2\n" + _worldContext;
+                        SendSteer("scene", _worldContext);
+                        yield return UpdateStudy("Rebuild the teaching model for this edited topic.", _worldRequest);
+                    }
                 }
             }
-            _busy = false;
+            if (operation == _operationVersion) { _busy = false; CancelDraft(); }
         }
 
         private IEnumerator Post(string endpoint, byte[] bytes, string contentType, Action<string> success, int timeout)
         {
+            int version = _worldRequest;
+            bool scoped = _worldVisible || endpoint.StartsWith("/world/", StringComparison.Ordinal);
             using var request = new UnityWebRequest(RelayConfig.BaseUrl.TrimEnd('/') + endpoint, "POST");
             request.uploadHandler = new UploadHandlerRaw(bytes);
             request.downloadHandler = new DownloadHandlerBuffer();
             request.SetRequestHeader("Content-Type", contentType);
             request.timeout = timeout;
+            if (endpoint == "/world/prepare") _preparationRequest = request;
             yield return request.SendWebRequest();
+            if (_preparationRequest == request) _preparationRequest = null;
+            if (scoped && version != _worldRequest) yield break;
             if (request.result == UnityWebRequest.Result.Success) success(request.downloadHandler.text);
             else
             {
@@ -215,25 +347,132 @@ namespace Zap.Constellation
 
         public void EnterWorld(TopicBall ball)
         {
-            if (_world == null || _world.IsEntered || _busy || _voice.IsRecording || ball == null) return;
+            if (_world == null || _preparingWorld || _busy || Travelling || _voice.IsRecording || ball == null || (InWorld && ball == _worldNode)) return;
+            string prompt = NodeContext.WorldPrompt(ball.Data, _balls.Select(b => b.Data));
+            if (ball.Data.imageContext != "panorama-v2\n" + prompt)
+            { ball.Data.image = ""; ball.Refresh(); }
+            Vector3 origin = ball.transform.position;
+            Vector3 direction = ball.LastThrowVelocity.sqrMagnitude > .01f ? ball.LastThrowVelocity.normalized : Camera.main.transform.forward;
+            Vector3 fromHead = origin - Camera.main.transform.position;
+            ball.Body.linearVelocity = Vector3.zero; ball.Body.angularVelocity = Vector3.zero;
+            Texture preview = ball.Crystal.PreviewTexture;
+            if (InWorld) { LeaveWorld(); origin = Camera.main.transform.position + fromHead; }
+            _journey.Begin(origin, direction, preview);
             _worldNode = ball;
+            _branchSelection = null;
             Save();
             _worldVisible = true;
             _content.gameObject.SetActive(false);
-            SetStatus("Opening " + ball.Data.topic + "…");
-            string prompt = NodeContext.WorldPrompt(ball.Data, _balls.Select(b => b.Data));
-            if (ball.Data.imageContext != prompt) ball.Data.image = "";
-            ball.Data.imageContext = prompt;
+            if (_voidStars == null) _voidStars = GameObject.Find("Temporary void stars — replace with skybox");
+            if (_voidStars != null) _voidStars.SetActive(false);
+            _preparingWorld = true; _busy = true;
+            _loadingStarted = Time.unscaledTime;
+            SetStatus("Preparing your world… Y returns.");
+            _worldContext = prompt;
+            if (ball.Data.imageContext != "panorama-v2\n" + prompt) ball.Data.image = "";
+            ball.Data.imageContext = "panorama-v2\n" + prompt;
             _dirty = true;
-            _world.Enter(ball.Data.id, ball.Data.topic, prompt, ball.Data.image);
+            StartCoroutine(PrepareAndEnter(ball, prompt, ++_worldRequest));
+        }
+
+        private IEnumerator PrepareAndEnter(TopicBall ball, string context, int version)
+        {
+            string response = null;
+            var request = new PrepareRequest { topic = ball.Data.topic, context = context };
+            yield return Post("/world/prepare", Encoding.UTF8.GetBytes(JsonUtility.ToJson(request)), "application/json", result => response = result, 170);
+            if (version != _worldRequest || !_preparingWorld) yield break;
+            PreparedWorld prepared = null;
+            if (!string.IsNullOrEmpty(response))
+            {
+                try { prepared = JsonUtility.FromJson<PreparedWorld>(response); }
+                catch (ArgumentException) { }
+            }
+            while (prepared?.projection == "geometry" && prepared.state == "preparing")
+            {
+                SetStatus(prepared.notice);
+                yield return new WaitForSeconds(3);
+                if (version != _worldRequest) yield break;
+                if (string.IsNullOrEmpty(prepared.cacheKey) || !System.Text.RegularExpressions.Regex.IsMatch(prepared.cacheKey, @"^[a-f0-9]{64}$")) break;
+                using var poll = UnityWebRequest.Get(RelayConfig.BaseUrl.TrimEnd('/') + "/world/jobs/" + prepared.cacheKey);
+                poll.timeout = 30; _preparationRequest = poll;
+                yield return poll.SendWebRequest();
+                if (_preparationRequest == poll) _preparationRequest = null;
+                if (version != _worldRequest) yield break;
+                if (poll.result != UnityWebRequest.Result.Success) { prepared = null; break; }
+                try { prepared = JsonUtility.FromJson<PreparedWorld>(poll.downloadHandler.text); }
+                catch (ArgumentException) { prepared = null; }
+            }
+            if (prepared == null || prepared.state == "error")
+            {
+                string error = prepared?.notice ?? "World preparation could not finish. Re-enter to resume.";
+                ShowConstellation(); SetStatus(error); yield break;
+            }
+            if (prepared.projection == "geometry")
+            {
+                string error = null;
+                _world.GetComponent<DomeView>().SetVisible(false);
+                yield return _environment.Load(prepared.environment, RelayConfig.BaseUrl, SetStatus, failure => error = failure);
+                if (version != _worldRequest) yield break;
+                if (error != null) { ShowConstellation(); SetStatus(error); yield break; }
+                _navigation.Enter(_environment);
+                _space.Open(ball.Data.id, prepared.plan);
+                _preparingWorld = false; _busy = false;
+                _journey.MarkReady();
+                SetStatus("Your exploration space is ready. Grip to inspect; hold left trigger to ask or create an object.");
+                yield break;
+            }
+            _space.Open(ball.Data.id, prepared?.plan);
+            string image = !string.IsNullOrEmpty(ball.Data.image) ? ball.Data.image : prepared?.image ?? "";
+            if (!string.IsNullOrEmpty(image)) { ball.Data.image = image; ball.Refresh(); _dirty = true; }
+            _navigation.Enter();
+            _world.Enter(ball.Data.id, ball.Data.topic, context, image);
+            _preparingWorld = false; _busy = false;
+            SetStatus(string.IsNullOrEmpty(prepared?.notice) ? "Surroundings ready. Connecting the live world…" : prepared.notice);
+        }
+
+        private IEnumerator UpdateStudy(string instruction, int version)
+        {
+            var target = _study;
+            var request = new StudyRequest { topic = _worldNode.Data.topic, context = _worldContext,
+                instruction = instruction, current = target?.Data, focused = target?.FocusedName ?? "",
+                step = target?.StepIndex ?? -1, parameter = target?.Parameter ?? 0,
+                objects = _space.Objects.Select(item => item.Data.title).ToArray() };
+            SetStatus("Exploring: " + instruction);
+            string response = null;
+            yield return Post("/world/explore", Encoding.UTF8.GetBytes(JsonUtility.ToJson(request)), "application/json", result => response = result, 100);
+            if (version != _worldRequest || !InWorld || response == null) yield break;
+            StudyReply reply = null;
+            try { reply = JsonUtility.FromJson<StudyReply>(response); } catch (ArgumentException) { }
+            if (reply == null) { SetStatus("That request could not be read. Your objects are unchanged."); yield break; }
+            if (reply.action == "add" && reply.model?.parts != null)
+            {
+                if (_space.Full) { SetStatus("Six objects are here already. Ask to change one or keep exploring."); yield break; }
+                target = _space.Add(reply.model);
+            }
+            else if (reply.action == "revise" && reply.model?.parts != null)
+            {
+                if (target == null) target = _space.Add(reply.model);
+                else
+                {
+                    var pose = target.Grab.transform;
+                    Vector3 position = pose.position, scale = pose.localScale; Quaternion rotation = pose.rotation;
+                    target.Build(reply.model);
+                    target.Grab.transform.SetPositionAndRotation(position, rotation); target.Grab.transform.localScale = scale;
+                }
+            }
+            if (target != null) { _space.SetCurrent(target); target.Explain(reply.answer); }
+            SetStatus(reply.answer); _space.Save();
         }
 
         public void LeaveWorld()
         {
             if (_world == null) return;
+            _worldRequest++; _preparingWorld = false; _busy = false;
+            _operationVersion++;
+            _preparationRequest?.Abort();
             var texture = _world.GetComponent<WorldStream>().Texture;
-            if (_worldNode != null && _world.State == "streaming" && texture != null && texture.width > 2)
-            { _worldNode.Data.image = Convert.ToBase64String(texture.EncodeToJPG(65)); _dirty = true; }
+            if (!_environment.IsVisible && _worldNode != null && WorldReady && texture != null && texture.width > 2)
+            { _worldNode.Data.image = _world.GetComponent<DomeView>().CapturePanorama(); _dirty = true; }
             _world.Exit();
             ShowConstellation();
             SetStatus("Back in your constellation.");
@@ -242,24 +481,60 @@ namespace Zap.Constellation
 
         private void ShowConstellation()
         {
+            if (_worldVisible)
+            {
+                _worldRequest++; _operationVersion++;
+                _preparingWorld = false; _busy = false;
+                _preparationRequest?.Abort();
+            }
+            _navigation.Exit();
+            _space.Close();
+            CancelDraft();
+            _environment.Clear();
+            _journey.Cancel();
+            foreach (var branch in _branchPositions)
+            {
+                if (branch.Key == null) continue;
+                branch.Key.transform.SetParent(_content, true);
+                branch.Key.transform.position = branch.Value;
+                branch.Key.Body.linearVelocity = Vector3.zero; branch.Key.Body.angularVelocity = Vector3.zero;
+            }
+            _branchPositions.Clear(); _branchSelection = null;
+            if (_voidStars != null) _voidStars.SetActive(true);
             _worldVisible = false; _pendingInstruction = null;
             _content.gameObject.SetActive(true);
         }
 
         private void UpdateWorldControls()
         {
-            if (_world.State != "streaming" || Time.unscaledTime - _lastSteer < 1.8f) return;
-            if (_input.EventDown) SendSteer("event", "Show an interesting change that teaches something about " + _worldNode.Data.topic);
-            else if (_input.Look.sqrMagnitude > .35f)
-                SendSteer("look", Mathf.Abs(_input.Look.x) > Mathf.Abs(_input.Look.y)
-                    ? (_input.Look.x > 0 ? "slowly pan right" : "slowly pan left") : (_input.Look.y > 0 ? "slowly look up" : "slowly look down"));
-            else if (_input.Move.sqrMagnitude > .35f)
-                SendSteer("move", Mathf.Abs(_input.Move.y) > Mathf.Abs(_input.Move.x)
-                    ? (_input.Move.y > 0 ? "slowly move forward" : "slowly move backward") : (_input.Move.x > 0 ? "slowly move right" : "slowly move left"));
+            if (_right != null) _space.Focus(new Ray(_right.position, _right.forward));
+            bool inspecting = _study != null && (_study.IsHeld || _study.IsFocused);
+            Vector2 look = _input.Look;
+            if (inspecting)
+            {
+                _study.Zoom(look.y);
+                _study.AdjustParameter(look.x);
+                look = Vector2.zero;
+            }
+            // Voice and network requests must not freeze local navigation.
+            _navigation.Tick(_input.Move, look, WorldReady, SendSteer);
+            if (_input.EnterDown && _branchSelection != null) { EnterWorld(_branchSelection); return; }
+            if (_input.EnterDown && _study != null) { _study.Recenter(); SetStatus("Object brought in front of you."); }
+            if (_input.PauseDown && _study != null) { _study.ToggleAnimation(); SetStatus("Object animation toggled."); }
+            if (_input.ViewDown && _study != null) { _study.ResetExploration(); SetStatus("Exploration reset; your objects are kept."); }
+            if (!_input.EventDown) return;
+            if (inspecting)
+            { _study.NextStep(); SetStatus(_study.LearningText); _space.Save(); }
+            else SetStatus("Point at an object: trigger explores; right stick zooms or adjusts its experiment. Hold left trigger to wish for another object.");
         }
 
         private void SendSteer(string kind, string text)
         {
+            if (_environment.IsVisible)
+            {
+                if (kind == "voice" || kind == "scene") SetStatus("Updating the learning object…");
+                return;
+            }
             _lastSteer = Time.unscaledTime; _pendingSeq = uint.MaxValue; _pendingInstruction = text;
             SetStatus("Sending: " + text);
             _world.Steer(kind, text);
@@ -267,13 +542,15 @@ namespace Zap.Constellation
         private void PromptReceived(string text, uint sequence) { if (_pendingInstruction != null) _pendingSeq = sequence; }
         private void FrameReceived(uint sequence)
         {
+            if (_world.IsEntered && _journey.IsActive) _journey.MarkReady();
             if (_pendingInstruction != null && sequence >= _pendingSeq)
-            { SetStatus("World updated: " + _pendingInstruction); _pendingInstruction = null; }
+            { SetStatus("Instruction sent. The live world is responding."); _pendingInstruction = null; }
         }
         private void WorldStatus(StatusMessage status)
         {
+            if (_environment != null && _environment.IsVisible) return;
             if (status.state == "error") SetStatus(status.detail);
-            else if (status.state == "streaming") SetStatus("Explore with the sticks. Hold A to speak. Y returns to your constellation.");
+            else if (status.state == "streaming") SetStatus("Look all around. A: new idea · Left trigger: ask · Y: map.");
             else if (!string.IsNullOrEmpty(status.detail)) SetStatus(status.detail);
         }
 
@@ -320,7 +597,7 @@ namespace Zap.Constellation
                 to.Data.parentIds = (to.Data.parentIds ?? Array.Empty<string>()).Append(from.Data.id).Distinct().ToArray();
                 SetStatus(from.Data.topic + " is now a parent of " + to.Data.topic);
             }
-            _dirty = true; RebuildLines(); Save();
+            _dirty = true; InvalidateChangedPreviews(); RebuildLines(); Save();
         }
 
         private void RebuildLines()
@@ -372,8 +649,9 @@ namespace Zap.Constellation
             }
             _hud.transform.rotation = Quaternion.LookRotation(_hud.transform.position - Camera.main.transform.position);
             string title = _worldVisible ? _worldNode?.Data.topic : (Current != null ? Current.Data.topic : "ZAP!");
-            string controls = _worldVisible ? "Sticks: move / look · A: steer by voice\nB: edit this topic · Trigger: event · Y: return" : "A: new topic · B: edit selected\nGrip: grab / throw · X: enter world";
-            _hud.text = title + "\n\n" + (_voice.IsRecording ? "● Listening " + new string('|', Mathf.Clamp(Mathf.RoundToInt(_voice.Level * 150), 1, 12)) : Status)
+            string controls = _worldVisible ? "A: new idea · B: edit idea · Left trigger: ask / create object\nPoint + right stick: zoom / experiment · Left stick: walk · Y: map" : "A: new topic · B: edit selected\nGrip: grab · Throw: travel · X: enter";
+            string progress = Travelling ? "\n" + Mathf.FloorToInt(_journey.Elapsed) + "s elapsed · Y returns" : "";
+            _hud.text = title + "\n\n" + (_voice.IsRecording ? "● Listening " + new string('|', Mathf.Clamp(Mathf.RoundToInt(_voice.Level * 150), 1, 12)) : Status + progress)
                 + "\n\n" + controls;
         }
         public void SetStatus(string text) { Status = text; }
@@ -381,8 +659,11 @@ namespace Zap.Constellation
         {
             if (_savePath == null) return;
             foreach (var ball in _balls)
-                if (Vector3.Distance(ball.Data.position, ball.transform.position) > .002f)
-                { ball.Data.position = ball.transform.position; _dirty = true; }
+            {
+                Vector3 position = _branchPositions.TryGetValue(ball, out var mapPosition) ? mapPosition : ball.transform.position;
+                if (Vector3.Distance(ball.Data.position, position) > .002f)
+                { ball.Data.position = position; _dirty = true; }
+            }
             _lastSave = Time.unscaledTime;
             if (!_dirty) return;
             try
@@ -392,7 +673,7 @@ namespace Zap.Constellation
             }
             catch (Exception exception) { SetStatus("Could not save your constellation: " + exception.Message); }
         }
-        private void OnApplicationPause(bool paused) { if (paused) { if (_world != null && _world.IsEntered) LeaveWorld(); Save(); } }
+        private void OnApplicationPause(bool paused) { if (paused) { if (_world != null && (InWorld || _preparingWorld)) LeaveWorld(); Save(); } }
         private void OnApplicationQuit() { Save(); }
         private void OnDestroy() { if (_material) Destroy(_material); }
 
@@ -417,9 +698,12 @@ namespace Zap.Constellation
         }
 
         [Serializable] private class Transcript { public string text; }
+        [Serializable] private class TranscriptImage { public string image; }
         [Serializable] private class ApiError { public string detail; }
         [Serializable] private class ParentNote { public string id; public string topic; public string summary; }
         [Serializable] private class NodeRequest { public string action; public string text; public NodeData node; public ParentNote[] parents; }
         [Serializable] private class NodeResult { public string topic; public string summary; public string worldPrompt; public string[] suggestions; public string mode; }
+        [Serializable] private class PrepareRequest { public string topic; public string context; }
+        [Serializable] private class StudyRequest { public string topic; public string context; public string instruction; public StudyModelData current; public string focused; public string[] objects; public int step; public float parameter; }
     }
 }

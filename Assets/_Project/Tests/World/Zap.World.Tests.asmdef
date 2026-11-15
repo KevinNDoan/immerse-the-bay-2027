@@ -7,7 +7,8 @@
         "Zap.Constellation",
         "Unity.XR.Interaction.Toolkit",
         "UnityEngine.TestRunner",
-        "UnityEditor.TestRunner"
+        "UnityEditor.TestRunner",
+        "Unity.RenderPipelines.Universal.Runtime"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

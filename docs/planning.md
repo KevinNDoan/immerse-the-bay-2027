@@ -2,7 +2,17 @@
 
 ## Implementation update — 2026-11-14
 
+**Latest product clarification:** ZAP is a spatial knowledge graph in which every idea is represented by an entire explorable world. Users can explore many subjects, make associative connections and discover groups of similar ideas. An idea reached from another world does not have to remain a subtopic or share its setting. Prior context is optional background for resolving ambiguity and explicit connections; a clear new idea takes priority. Similarity-based grouping and associative cross-links are the intended graph behavior. Automatic semantic grouping is not implemented yet; the current lineage-based links must not be described as that feature. The one-world testing budget remains in force.
+
+**Interaction requirement:** Each world should offer a distinct exploration of its idea, with meaningful things to discover, manipulate and affect throughout the space. Learning should emerge from observable consequences, supported by contextual explanations and voice questions. The current single teaching model (grab/resize/spread/labels/voice revision) is a prototype and does not satisfy this requirement. Build a generic interaction system that selects suitable actions and behaviors for each idea; avoid fixed topic templates. Distinguish demonstrations and analogies from validated simulations. Preserve meaningful discoveries when revisiting a world and let them lead to other idea-worlds. The saved room is only a budget-constrained test fixture, not the intended experience for every idea.
+
 The owner approved work beyond Stage 2: prioritize speech-based creation/editing, throwable balls and live Orbis; defer Satie and visual polish while the designer builds a skybox. The owner selected **OpenAI GPT-6 Luna**, replacing the Claude API choices below. New balls inherit selected-parent context; multiple parents and ancestor context are persisted and used for world generation. See `docs/voice-worlds.md` for current controls and setup, and the latest handoff for verification. The remaining sections preserve the original product plan, not a claim that every feature is delivered.
+
+The owner subsequently requested navigable, living worlds with complete surroundings and emphasized that example topics must not be hardcoded. Orbis remains central while its suitability for tracked VR is assessed against the owner's Visko paper and the available API. The earlier categorical rejection of Orbis and requirement for a World Labs key were premature. See `docs/tasks/m2-living-worlds.md` and `docs/handoffs/2026-11-14-living-worlds-scope.md` for the current scope and evidence.
+
+The subsequent Orbis experiments did not meet the owner's cohesion requirement: panoramas drifted into perspective video, and independent camera streams did not establish a shared spatial scene. The owner approved World Labs access for actual environment geometry, then explicitly capped work at **one generated world, reused for all testing** because credits are limited. New World Labs generation and mesh exports are disabled by default. The one already-started world and HQ export are being retained. Do not start additional billable worlds or exports without a new instruction. See `docs/spatial-worlds.md` for the implementation and current verification boundaries.
+
+In the coordinated visual-design chat, the owner approved crystal-ball previews and a blue hyperspace throw transition. A deliberate forward throw now requests travel; gentle release still floats. New ideas can be created from inside the current world and inherit that world's parent context. The environment under test is actual mesh geometry with collision; the current teaching objects remain schematic, and environment inhabitants are not automatically rigged or animated.
 
 A VR study tool for Quest 3: speak a topic, throw it into a midnight void as a star, connect stars into a constellation, and step inside any star to explore a generated world of that topic.
 
@@ -89,7 +99,7 @@ I stop after Stage 2. The constellation work (M1 onward) starts when you say so.
 
 **Orbis (Visko), accessed through Reactor**
 - A real-time generative video model. It streams flat, mono 16:9 video (generated at 832×480, 18 fps, upscalable to 4K) and a mono audio track.
-- It accepts text prompts only. A new prompt takes effect about 1.8 seconds later. There is no camera, pose or controller input, and no dome or 3D output.
+- Its documented control interface accepts text prompts and an optional starting image. Prompt changes apply at roughly 1.8-second chunk boundaries. The published Reactor API does not list explicit camera-pose input or stereo/360 output; that is a limitation of documented support, not proof that Orbis cannot underpin a navigable experience.
 - It can start from a 16:9 image. A run lasts up to about 61 minutes. An account can hold 5 sessions at once.
 - Cost is about $0.58 per minute (Stable) or $1.25 per minute (Dynamic), billed while a session is open. You have plenty of credits and the sponsor encourages heavy use, so sessions are not rationed.
 - SDKs: JavaScript, Python and native Android. There is no Unity SDK.

@@ -10,31 +10,25 @@ namespace Zap.Constellation
         const float SurfaceZ = .001f;
         const float PanelZ = .002f;
         const float TextZ = 0f;
-        const float DividerHeight = .002f;
         const float LevelBarHeight = .006f;
-        const float KeyColumnWidth = .15f;
         const float Gap = .003f;
-
-        const string Keys = "A\nB\nGrip\nBoth grips\nTrigger\nX";
-        const string Labels = "Hold and say a new topic\nHold and say a change\nGrab and throw\nPull and stretch\nLink topics, sweep to cut\nEnter the selected topic";
-        const string CompactHint = "Sticks: move and look · Trigger: event\nA: speak · B: edit topic · Y: return";
 
         readonly Transform[] _outline = new Transform[4];
 
         ZapTheme _theme;
         Transform _panel;
-        Transform _divider;
         Transform _levelBar;
         TextMeshPro _title;
+        TextMeshPro _step;
         TextMeshPro _status;
-        TextMeshPro _keys;
-        TextMeshPro _labels;
         TextMeshPro _hint;
         Material _panelMaterial;
         Material _outlineMaterial;
         Material _barMaterial;
         string _lastTitle;
+        string _lastStep;
         string _lastStatus;
+        string _lastHint;
         int _homeFrameVersion = -1;
         bool _built;
 
@@ -59,12 +53,13 @@ namespace Zap.Constellation
             return card;
         }
 
-        public void Show(string title, string status, bool inWorld, bool listening, float level, bool busy)
+        public void Show(string title, string step, string status, string hint, bool listening, float level, bool busy)
         {
             if (!_built) return;
 
-            if (inWorld != IsCompact)
-                ApplyLayout(inWorld);
+            var compact = string.IsNullOrEmpty(step);
+            if (compact != IsCompact)
+                ApplyLayout(compact);
 
             var nextTitle = title ?? "ZAP!";
             if (!string.Equals(_lastTitle, nextTitle, StringComparison.Ordinal))
@@ -73,11 +68,26 @@ namespace Zap.Constellation
                 _title.text = nextTitle;
             }
 
+            var nextStep = step ?? string.Empty;
+            if (!string.Equals(_lastStep, nextStep, StringComparison.Ordinal))
+            {
+                _lastStep = nextStep;
+                _step.text = nextStep;
+            }
+
             var nextStatus = status ?? string.Empty;
             if (!string.Equals(_lastStatus, nextStatus, StringComparison.Ordinal))
             {
                 _lastStatus = nextStatus;
                 _status.text = nextStatus;
+            }
+
+            var nextHint = hint ?? string.Empty;
+            if (!string.Equals(_lastHint, nextHint, StringComparison.Ordinal))
+            {
+                _lastHint = nextHint;
+                _hint.text = nextHint;
+                _hint.gameObject.SetActive(nextHint.Length != 0);
             }
 
             UpdateLevelBar(listening, level, busy);
@@ -113,22 +123,16 @@ namespace Zap.Constellation
             _outline[1] = CreateQuad("Outline bottom", _outlineMaterial, SurfaceZ);
             _outline[2] = CreateQuad("Outline left", _outlineMaterial, SurfaceZ);
             _outline[3] = CreateQuad("Outline right", _outlineMaterial, SurfaceZ);
-            _divider = CreateQuad("Divider", _outlineMaterial, SurfaceZ);
             _levelBar = CreateQuad("Level bar", _barMaterial, SurfaceZ);
 
             _title = CreateText("Title", _theme.cardTitleSize, _theme.cardTextColor, 1);
+            _step = CreateText("Step", _theme.cardStepSize, _theme.cardTextColor, 3);
             _status = CreateText("Status", _theme.cardStatusSize, _theme.cardTextColor, 3);
-            _keys = CreateText("Keys", _theme.cardBodySize, _theme.cardDimTextColor, 6);
-            _labels = CreateText("Labels", _theme.cardBodySize, _theme.cardTextColor, 6);
             _hint = CreateText("Hint", _theme.cardHintSize, _theme.cardDimTextColor, 2);
             _title.textWrappingMode = TextWrappingModes.NoWrap;
-            _keys.textWrappingMode = TextWrappingModes.NoWrap;
-            _labels.textWrappingMode = TextWrappingModes.NoWrap;
-            _keys.text = Keys;
-            _labels.text = Labels;
-            _hint.text = CompactHint;
 
-            ApplyLayout(false);
+            ApplyLayout(true);
+            _hint.gameObject.SetActive(false);
             _levelBar.gameObject.SetActive(false);
             _built = true;
         }
@@ -169,16 +173,10 @@ namespace Zap.Constellation
             var size = compact ? _theme.cardCompactSize : _theme.cardSize;
             ResizeFrame(size);
 
-            _title.gameObject.SetActive(!compact);
-            _divider.gameObject.SetActive(!compact);
-            _keys.gameObject.SetActive(!compact);
-            _labels.gameObject.SetActive(!compact);
-            _hint.gameObject.SetActive(compact);
-
-            if (compact)
-                LayoutCompact(size);
-            else
-                LayoutFull(size);
+            _step.gameObject.SetActive(!compact);
+            _status.maxVisibleLines = compact ? 3 : 2;
+            _status.color = compact ? _theme.cardTextColor : _theme.cardDimTextColor;
+            Layout(size, compact);
 
             AlignToHomeFrame();
         }
@@ -199,40 +197,25 @@ namespace Zap.Constellation
 
         static float LineHeight(float fontSize) => fontSize * .125f;
 
-        void LayoutFull(Vector2 size)
+        void Layout(Vector2 size, bool compact)
         {
             var left = -size.x * .5f + _theme.cardPadding;
             var top = size.y * .5f - _theme.cardPadding;
-            var bottom = -size.y * .5f + _theme.cardPadding;
             var innerWidth = Mathf.Max(0f, size.x - _theme.cardPadding * 2f);
 
             var titleHeight = LineHeight(_theme.cardTitleSize);
             PlaceText(_title, left, top, innerWidth, titleHeight);
             top -= titleHeight + Gap;
 
-            var statusHeight = 3 * LineHeight(_theme.cardStatusSize);
-            PlaceText(_status, left, top, innerWidth, statusHeight);
-            top -= statusHeight + Gap;
+            if (!compact)
+            {
+                var stepHeight = 3 * LineHeight(_theme.cardStepSize);
+                PlaceText(_step, left, top, innerWidth, stepHeight);
+                top -= stepHeight + Gap;
+            }
 
-            PlaceLevelBar(left, top, innerWidth);
-            top -= LevelBarHeight + Gap;
-
-            _divider.localPosition = new Vector3(0f, top - DividerHeight * .5f, SurfaceZ);
-            _divider.localScale = new Vector3(innerWidth, DividerHeight, 1f);
-            top -= DividerHeight + Gap;
-
-            var bodyHeight = Mathf.Max(0f, top - bottom);
-            PlaceText(_keys, left, top, KeyColumnWidth, bodyHeight);
-            PlaceText(_labels, left + KeyColumnWidth, top, Mathf.Max(0f, innerWidth - KeyColumnWidth), bodyHeight);
-        }
-
-        void LayoutCompact(Vector2 size)
-        {
-            var left = -size.x * .5f + _theme.cardPadding;
-            var top = size.y * .5f - _theme.cardPadding;
-            var innerWidth = Mathf.Max(0f, size.x - _theme.cardPadding * 2f);
-
-            var statusHeight = 3 * LineHeight(_theme.cardStatusSize);
+            var statusLines = compact ? 3 : 2;
+            var statusHeight = statusLines * LineHeight(_theme.cardStatusSize);
             PlaceText(_status, left, top, innerWidth, statusHeight);
             top -= statusHeight + Gap;
 
@@ -277,8 +260,7 @@ namespace Zap.Constellation
         {
             var headHeight = HomeFrame.Version == 0 ? 1.5f : HomeFrame.HeadHeight;
             transform.position = new Vector3(0f, headHeight - _theme.controlsDropBelowEyes, _theme.controlsDistance);
-            var tilt = Mathf.Atan2(_theme.controlsDropBelowEyes, _theme.controlsDistance) * Mathf.Rad2Deg;
-            transform.rotation = Quaternion.Euler(tilt, 0f, 0f);
+            transform.rotation = Quaternion.identity;
             _homeFrameVersion = HomeFrame.Version;
         }
 

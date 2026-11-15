@@ -167,6 +167,50 @@ namespace Zap.World.Tests
             Assert.AreEqual(32767, BitConverter.ToInt16(bytes, 46));
         }
 
+        [Test]
+        public void OnboardingRulesAdvanceOnTheRightActions()
+        {
+            var starts = new[]
+            {
+                new TutorialFacts(),
+                new TutorialFacts(),
+                new TutorialFacts(),
+                new TutorialFacts(),
+                new TutorialFacts { Links = 1 },
+                new TutorialFacts(),
+                new TutorialFacts(),
+                new TutorialFacts { InWorld = true }
+            };
+
+            for (int step = 0; step < Onboarding.StepCount; step++)
+                Assert.IsFalse(Onboarding.Done(step, starts[step], starts[step], false), "Step " + step + " advanced without its action.");
+
+            Assert.IsTrue(Onboarding.Done(0, starts[0], new TutorialFacts { Topics = 1 }, false));
+
+            var holding = new TutorialFacts { Holding = true };
+            Assert.IsTrue(Onboarding.Middle(1, starts[1], holding));
+            Assert.IsFalse(Onboarding.Done(1, starts[1], holding, true));
+            Assert.IsFalse(Onboarding.Done(1, starts[1], starts[1], false));
+            Assert.IsTrue(Onboarding.Done(1, starts[1], starts[1], true));
+
+            Assert.IsTrue(Onboarding.Done(2, starts[2], new TutorialFacts { Topics = 1 }, false));
+            Assert.IsTrue(Onboarding.Done(3, starts[3], new TutorialFacts { Links = 1 }, false));
+            Assert.IsTrue(Onboarding.Done(4, starts[4], new TutorialFacts { Links = 0 }, false));
+
+            var pulling = new TutorialFacts { Pulling = true };
+            Assert.IsTrue(Onboarding.Middle(5, starts[5], pulling));
+            Assert.IsFalse(Onboarding.Done(5, starts[5], pulling, true));
+            Assert.IsFalse(Onboarding.Done(5, starts[5], starts[5], false));
+            Assert.IsTrue(Onboarding.Done(5, starts[5], starts[5], true));
+
+            var inWorld = new TutorialFacts { InWorld = true };
+            Assert.IsTrue(Onboarding.Done(6, starts[6], inWorld, false));
+            Assert.IsTrue(Onboarding.Middle(7, starts[7], inWorld));
+            Assert.IsFalse(Onboarding.Done(7, starts[7], inWorld, true));
+            Assert.IsFalse(Onboarding.Done(7, starts[7], new TutorialFacts(), false));
+            Assert.IsTrue(Onboarding.Done(7, starts[7], new TutorialFacts(), true));
+        }
+
         [UnityTest]
         public IEnumerator ControlsCardBuildsAndSwitchesLayout()
         {
@@ -176,10 +220,10 @@ namespace Zap.World.Tests
                 var card = ControlsCard.Create(parent.transform);
                 yield return null;
 
-                card.Show("Volcanoes", "Listening…", false, true, .5f, false);
+                card.Show("Volcanoes", "Hold A and speak.", "Listening…", "Click the left stick to skip", true, .5f, false);
                 Assert.IsFalse(card.IsCompact);
 
-                card.Show("Volcanoes", "Opening…", true, false, 0f, true);
+                card.Show("Volcanoes", null, "Opening…", "Look at a controller", false, 0f, true);
                 Assert.IsTrue(card.IsCompact);
 
                 card.Visible = false;

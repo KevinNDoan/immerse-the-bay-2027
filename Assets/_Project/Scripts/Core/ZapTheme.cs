@@ -48,26 +48,30 @@ namespace Zap.Core
 
         [Header("Controls card")]
         [Tooltip("How far ahead of the person the card sits, in metres.")]
-        public float controlsDistance = 1.3f;
+        public float controlsDistance = 1.2f;
         [Tooltip("How far below eye height the centre of the card sits, in metres.")]
-        public float controlsDropBelowEyes = .35f;
-        [Tooltip("Full controls card size, in metres.")]
-        public Vector2 cardSize = new Vector2(.58f, .5f);
-        [Tooltip("Compact in-world controls card size, in metres.")]
-        public Vector2 cardCompactSize = new Vector2(.58f, .27f);
+        public float controlsDropBelowEyes = .1f;
+        [Tooltip("Card size while a tutorial step shows, in metres.")]
+        public Vector2 cardSize = new Vector2(.56f, .41f);
+        [Tooltip("Card size while no tutorial step shows, in metres.")]
+        public Vector2 cardCompactSize = new Vector2(.56f, .31f);
         [Tooltip("Space between the card edge and its content, in metres.")]
         public float cardPadding = .03f;
-        [Tooltip("Title text size on the full card.")]
-        public float cardTitleSize = .45f;
+        [Tooltip("Title text size on the card.")]
+        public float cardTitleSize = .4f;
+        [Tooltip("Tutorial step text size on the card.")]
+        public float cardStepSize = .34f;
         [Tooltip("Status text size on both card layouts.")]
         public float cardStatusSize = .32f;
-        [Tooltip("Control-list text size on the full card.")]
-        public float cardBodySize = .28f;
-        [Tooltip("Hint text size on the compact card.")]
+        [Tooltip("Hint text size on the card.")]
         public float cardHintSize = .24f;
+        [Tooltip("Controller hint text size.")]
+        public float hintTextSize = .16f;
+        [Tooltip("Controller hint line width, in metres.")]
+        public float hintLineWidth = .0015f;
         [Tooltip("Translucent background colour of the controls card.")]
         public Color cardColor = new Color(.078f, .051f, .149f, .9f);
-        [Tooltip("Colour of the card outline and divider.")]
+        [Tooltip("Colour of the card outline.")]
         public Color cardOutlineColor = new Color(.25f, .24f, .29f, 1f);
         [Tooltip("Width of the card outline, in metres.")]
         public float cardOutlineWidth = .004f;
@@ -75,6 +79,8 @@ namespace Zap.Core
         public Color cardTextColor = new Color(.83f, .82f, .86f, 1f);
         [Tooltip("Secondary controls card text colour.")]
         public Color cardDimTextColor = new Color(.83f, .82f, .86f, .6f);
+        [Tooltip("Colour of a highlighted controller hint.")]
+        public Color hintHighlightColor = Color.white;
 
         [Header("Images and font (empty until the designer adds them)")]
         public Texture2D nodeGlow;

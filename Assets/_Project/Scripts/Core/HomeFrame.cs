@@ -14,6 +14,7 @@ namespace Zap.Core
         const float AlignAfterTracked = 0.3f;
         const float AlignAnywayAfter = 1.5f;
         const float SubscribeInterval = 1f;
+        const float PresenceWait = 8f;
 
         public static int Version { get; private set; }
         public static float HeadHeight { get; private set; } = 1.5f;
@@ -27,10 +28,12 @@ namespace Zap.Core
         Vector3 _samplePosition;
         Quaternion _sampleRotation;
         float _requestedAt;
+        float _presenceUntil;
         float _nextSubscribeAt;
         bool _pending;
         bool _sampled;
         bool _provisional;
+        bool _headWasOff;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetStatics()
@@ -73,6 +76,7 @@ namespace Zap.Core
             if (_instance == null) return;
             _instance._pending = true;
             _instance._requestedAt = Time.unscaledTime;
+            _instance._presenceUntil = _instance._requestedAt + PresenceWait;
             _instance._provisional = false;
             _instance._sampled = false;
         }
@@ -109,6 +113,30 @@ namespace Zap.Core
             {
                 _nextSubscribeAt = Time.unscaledTime + SubscribeInterval;
                 SubscribeInputs();
+            }
+
+            var head = InputDevices.GetDeviceAtXRNode(XRNode.Head);
+            bool present = false;
+            bool known = head.isValid && head.TryGetFeatureValue(UnityEngine.XR.CommonUsages.userPresence, out present);
+            if (known)
+            {
+                if (present)
+                {
+                    if (_headWasOff)
+                    {
+                        _headWasOff = false;
+                        Request();
+                    }
+                }
+                else
+                {
+                    _headWasOff = true;
+                    if (Time.unscaledTime < _presenceUntil)
+                    {
+                        _requestedAt = Time.unscaledTime;
+                        return;
+                    }
+                }
             }
 
             if (!_pending && !_provisional) return;

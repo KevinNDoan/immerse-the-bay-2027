@@ -20,6 +20,9 @@ namespace Zap.Constellation
         public string Status { get; private set; } = "Hold A and say a topic. Let go to create it.";
         public bool Busy => _busy;
         public bool InWorld => _worldVisible;
+        public int LinkCount => _edges.Count;
+        public bool IsPulling => _pulling;
+        public bool IsHolding => AnyBallHeld();
         public bool IsListening => _voice != null && (_voice.IsRecording || _voice.IsStarting);
         public bool ShowControlsCard { get; set; } = true;
         public string ConstellationId { get; private set; }
@@ -34,6 +37,8 @@ namespace Zap.Constellation
         private Transform _left, _right, _content;
         private Material _material, _lineMaterial;
         private ControlsCard _card;
+        private ControllerHints _hints;
+        private Onboarding _onboarding;
         private TopicBall _voiceTarget, _worldNode, _lineStart;
         private string _voiceAction;
         private string _savePath;
@@ -44,6 +49,9 @@ namespace Zap.Constellation
         private Vector3 _cutOrigin;
         private Vector3 _cutDirection;
         private const float CutRange = 4f;
+        private const string TutorialHint = "Click the left stick to skip the tutorial";
+        private const string WorldHint = "Sticks: move and look · Trigger: event\nA: speak · B: edit topic · Y: return";
+        private const string VoidHint = "Look at a controller to see its buttons\nHold the left stick for the tutorial";
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Install()
@@ -468,14 +476,21 @@ namespace Zap.Constellation
         private void BuildHud()
         {
             _card = ControlsCard.Create(transform);
+            if (!ZapPlatform.IsDesktop)
+            {
+                _hints = ControllerHints.Create(transform);
+                _onboarding = Onboarding.Create(this, _hints);
+            }
         }
         private void UpdateHud()
         {
             if (_card == null) return;
             _card.Visible = ShowControlsCard;
             if (!ShowControlsCard) return;
-            string title = _worldVisible ? _worldNode?.Data.topic : (Current != null ? Current.Data.topic : "ZAP!");
-            _card.Show(title, Status, _worldVisible, _voice.IsRecording, _voice.Level, _busy);
+            bool tutorial = _onboarding != null && _onboarding.Running;
+            string title = tutorial ? _onboarding.Title : (_worldVisible ? _worldNode?.Data.topic : (Current != null ? Current.Data.topic : "ZAP!"));
+            string hint = tutorial ? TutorialHint : (_worldVisible ? WorldHint : VoidHint);
+            _card.Show(title, tutorial ? _onboarding.Text : null, Status, hint, _voice.IsRecording, _voice.Level, _busy);
         }
         public void SetStatus(string text) { Status = text; }
         public void Save()

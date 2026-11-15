@@ -35,6 +35,7 @@ namespace Zap.Constellation
         private Transform _left, _right, _content;
         private Material _material, _lineMaterial;
         private TextMeshPro _hud;
+        private int _hudFrame;
         private TopicBall _voiceTarget, _worldNode, _lineStart;
         private string _voiceAction;
         private string _savePath;
@@ -462,7 +463,8 @@ namespace Zap.Constellation
             _hud.enableAutoSizing = true;
             _hud.overflowMode = TextOverflowModes.Ellipsis;
             obj.SetActive(ShowControlsCard);
-            if (Camera.main) obj.transform.position = Camera.main.transform.position + Camera.main.transform.forward * 1.1f + Vector3.down * .25f;
+            obj.transform.position = new Vector3(0f, 1.2f, ZapTheme.Current.controlsDistance);
+            obj.transform.rotation = Quaternion.identity;
         }
         private void UpdateHud()
         {
@@ -475,14 +477,12 @@ namespace Zap.Constellation
             _hud.fontSizeMax = theme.controlsTextSizeMax;
             _hud.color = theme.textColor;
             if (theme.font != null) _hud.font = theme.font;
-            if (_left != null)
+            if (HomeFrame.Version != _hudFrame)
             {
-                Vector3 offset = _left.position + Vector3.up * .13f + _left.forward * .18f - Camera.main.transform.position;
-                // Keep the wrist card readable when the controller comes near the face.
-                if (offset.sqrMagnitude < .01f) offset = Camera.main.transform.forward;
-                _hud.transform.position = Camera.main.transform.position + offset.normalized * Mathf.Max(theme.controlsMinDistanceFromFace, offset.magnitude);
+                _hud.transform.position = new Vector3(0f, HomeFrame.HeadHeight - theme.controlsDropBelowEyes, theme.controlsDistance);
+                _hud.transform.rotation = Quaternion.identity;
+                _hudFrame = HomeFrame.Version;
             }
-            _hud.transform.rotation = Quaternion.LookRotation(_hud.transform.position - Camera.main.transform.position);
             string title = _worldVisible ? _worldNode?.Data.topic : (Current != null ? Current.Data.topic : "ZAP!");
             string controls = _worldVisible ? "Sticks: move / look · A: steer by voice\nB: edit this topic · Trigger: event · Y: return" : "A: new topic · B: edit selected\nGrip: grab / throw · X: enter world\nTrigger: link two balls · sweep a line to cut";
             _hud.text = title + "\n\n" + (_voice.IsRecording ? "● Listening " + new string('|', Mathf.Clamp(Mathf.RoundToInt(_voice.Level * 150), 1, 12)) : Status)

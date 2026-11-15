@@ -50,8 +50,10 @@ namespace Zap.Core
         public Vector2 controlsCardSize = new Vector2(.5f, .32f);
         public float controlsTextSizeMin = .22f;
         public float controlsTextSizeMax = .35f;
-        [Tooltip("The card never comes closer to the face than this.")]
-        public float controlsMinDistanceFromFace = .6f;
+        [Tooltip("How far ahead of the person the card sits, in metres.")]
+        public float controlsDistance = 1.1f;
+        [Tooltip("How far below eye height the centre of the card sits, in metres.")]
+        public float controlsDropBelowEyes = .3f;
 
         [Header("Images and font (empty until the designer adds them)")]
         public Texture2D nodeGlow;

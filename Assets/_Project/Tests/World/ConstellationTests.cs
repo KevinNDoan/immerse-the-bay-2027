@@ -7,12 +7,40 @@ using UnityEngine.TestTools;
 using UnityEngine.XR.Interaction.Toolkit;
 using UnityEngine.XR.Interaction.Toolkit.Interactors;
 using Zap.Constellation;
+using Zap.Core;
 using Object = UnityEngine.Object;
 
 namespace Zap.World.Tests
 {
     public class ConstellationTests
     {
+        [Test]
+        public void HomeFrameAlignPutsHeadOverOriginFacingForward()
+        {
+            var rig = new GameObject("Test rig");
+            rig.transform.position = new Vector3(1f, 0f, 2f);
+            rig.transform.eulerAngles = new Vector3(0f, 30f, 0f);
+            var head = new GameObject("Test head");
+            head.transform.SetParent(rig.transform, false);
+            head.transform.localPosition = new Vector3(.3f, 1.6f, -.2f);
+            head.transform.localEulerAngles = new Vector3(10f, 70f, 5f);
+            try
+            {
+                HomeFrame.Align(rig.transform, head.transform);
+
+                Assert.That(head.transform.position.x, Is.EqualTo(0f).Within(1e-3f));
+                Assert.That(head.transform.position.z, Is.EqualTo(0f).Within(1e-3f));
+                Assert.That(head.transform.position.y, Is.EqualTo(1.6f).Within(1e-3f));
+                var forward = Vector3.ProjectOnPlane(head.transform.forward, Vector3.up).normalized;
+                Assert.That(Vector3.Distance(forward, Vector3.forward), Is.LessThan(1e-3f));
+            }
+            finally
+            {
+                Object.DestroyImmediate(head);
+                Object.DestroyImmediate(rig);
+            }
+        }
+
         [Test]
         public void LineCutterDetectsSweepAcrossLine()
         {

@@ -25,6 +25,7 @@ namespace Zap.Constellation
         private readonly List<TopicBall> _balls = new List<TopicBall>();
         private readonly List<NodeEdge> _edges = new List<NodeEdge>();
         private readonly List<LineRenderer> _lines = new List<LineRenderer>();
+        private AudioSource _linkSound;
         private readonly Dictionary<TopicBall, Vector3> _branchPositions = new Dictionary<TopicBall, Vector3>();
         private readonly HashSet<TopicBall> _previewRequests = new HashSet<TopicBall>();
         public int LinkCount => _edges.Count;
@@ -471,6 +472,7 @@ namespace Zap.Constellation
                             parent.Data.suggestions = SuggestionPicker.Without(SuggestionPicker.Without(parent.Data.suggestions, text), data.topic);
                             _edges.Add(new NodeEdge { from = parent.Data.id, to = data.id });
                             RebuildLines();
+                            PlayLinkZap(parent, target);
                         }
                     }
                     _dirty = true;
@@ -1053,9 +1055,26 @@ namespace Zap.Constellation
                 { SetStatus(ZapPlatform.IsDesktop ? "That parent link would make a loop. Choose another topic." : "Those two are already connected another way."); return; }
                 _edges.Add(new NodeEdge { from = from.Data.id, to = to.Data.id });
                 to.Data.parentIds = (to.Data.parentIds ?? Array.Empty<string>()).Append(from.Data.id).Distinct().ToArray();
+                PlayLinkZap(from, to);
                 SetStatus(ZapPlatform.IsDesktop ? from.Data.topic + " is now a parent of " + to.Data.topic : "Linked " + from.Data.topic + " and " + to.Data.topic + ".");
             }
             _dirty = true; InvalidateChangedPreviews(); RebuildLines(); Save();
+        }
+
+        // The theme's electric zap, played where the new connection appears.
+        private void PlayLinkZap(TopicBall a, TopicBall b)
+        {
+            var theme = ZapTheme.Current;
+            if (theme.linkSound == null || a == null || b == null) return;
+            if (_linkSound == null)
+            {
+                var obj = new GameObject("Link zap sound"); obj.transform.SetParent(transform, false);
+                _linkSound = obj.AddComponent<AudioSource>();
+                _linkSound.playOnAwake = false; _linkSound.spatialBlend = .7f;
+                _linkSound.minDistance = .5f; _linkSound.maxDistance = 8f;
+            }
+            _linkSound.transform.position = (a.transform.position + b.transform.position) * .5f;
+            _linkSound.PlayOneShot(theme.linkSound, theme.linkSoundVolume);
         }
 
         private void RebuildLines()

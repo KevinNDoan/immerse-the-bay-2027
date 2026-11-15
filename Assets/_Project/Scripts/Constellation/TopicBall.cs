@@ -25,6 +25,11 @@ namespace Zap.Constellation
         public event Action<TopicBall> EnterRequested;
         public event Action<TopicBall> Tossed;
         private TextMeshPro _note;
+        private FrostPanel _noteGlass;
+        private string _glassText;
+        private float _glassFontSize;
+        private Vector2 _glassBox;
+        private Bounds _glassBounds;
         private Transform _orb;
         private Transform _star;
         private SpriteRenderer _core, _glow, _ring, _sparks, _orbit;
@@ -85,7 +90,24 @@ namespace Zap.Constellation
             _note.fontSize = theme.topicTextSize;
             _note.rectTransform.sizeDelta = theme.noteBoxSize;
             _note.color = theme.textColor;
+            // Frosted glass behind the note when the theme turns it on; sits just behind the text.
+            _noteGlass = FrostPanel.Create(note.transform, "Note glass", new Vector3(0f, 0f, .002f));
             Refresh();
+        }
+
+        // Sizes the note's glass to its text, re-measuring only when the text changes.
+        private void UpdateNoteGlass(ZapTheme theme)
+        {
+            if (_noteGlass == null) return;
+            if (_glassText != _note.text || _glassFontSize != _note.fontSize || _glassBox != _note.rectTransform.sizeDelta)
+            {
+                _note.ForceMeshUpdate();
+                _glassBounds = _note.textInfo.characterCount > 0 ? _note.textBounds : new Bounds();
+                _glassText = _note.text; _glassFontSize = _note.fontSize; _glassBox = _note.rectTransform.sizeDelta;
+            }
+            float pad = theme.glassPadding;
+            _noteGlass.SetSize(new Vector2(_glassBounds.size.x + pad * 2f, _glassBounds.size.y + pad * 2f));
+            _noteGlass.transform.localPosition = new Vector3(_glassBounds.center.x, _glassBounds.center.y, .002f);
         }
 
         private void BuildStar(ZapTheme theme)
@@ -273,7 +295,7 @@ namespace Zap.Constellation
             _note.transform.position = transform.position + Vector3.down * Mathf.Max(theme.noteOffsetBelowNode, _scale * .5f + .04f);
             _note.transform.rotation = Quaternion.LookRotation(_note.transform.position - camera.transform.position);
             UpdateNoteBox(theme);
-            _note.color = theme.textColor;
+            _note.color = _noteGlass != null ? theme.glassTextColor : theme.textColor;
             if (theme.font != null) _note.font = theme.font;
             bool showSummary = (held || (_selected && distance < theme.summaryShowDistance)) && !string.IsNullOrEmpty(Data.summary);
             _note.text = showSummary ? Data.topic + "\n" + Data.summary : Data.topic;
@@ -281,6 +303,7 @@ namespace Zap.Constellation
             _note.fontSize = showSummary || HasWorldTravelHint ? theme.summaryTextSize : theme.topicTextSize;
             _note.gameObject.SetActive(distance < theme.noteHideDistance);
             _note.maxVisibleLines = HasWorldTravelHint ? 5 : showSummary ? 4 : 2;
+            if (_note.gameObject.activeSelf) UpdateNoteGlass(theme);
         }
 
         private void UpdateStar(ZapTheme theme, Vector3 cameraPosition, bool held)

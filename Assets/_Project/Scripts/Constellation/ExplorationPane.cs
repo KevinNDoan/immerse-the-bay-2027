@@ -2,6 +2,7 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.XR.Interaction.Toolkit;
 using UnityEngine.XR.Interaction.Toolkit.Interactables;
+using Zap.Core;
 
 namespace Zap.Constellation
 {
@@ -17,6 +18,8 @@ namespace Zap.Constellation
         private TextMeshPro _title, _body, _status, _handle;
         private Transform _glass;
         private Material _material;
+        private FrostPanel _frost;
+        private bool Frosted => _frost != null;
         private BoxCollider _collider;
         private string _lastTitle;
         private bool _lastPending, _lastError;
@@ -30,11 +33,17 @@ namespace Zap.Constellation
             plate.GetComponent<Collider>().enabled = false; Destroy(plate.GetComponent<Collider>());
             _material = new Material(Shader.Find("Zap/GlassPane"));
             plate.GetComponent<Renderer>().sharedMaterial = _material;
-            _title = Label("Heading", .40f, FontStyles.Bold, new Color(.94f,.98f,1));
-            _body = Label("Explanation", .32f, FontStyles.Normal, new Color(.94f,.98f,1));
+            // Frosted glass replaces the dark smoked pane when the theme turns it on.
+            _frost = FrostPanel.Create(transform, "Frosted reading surface", Vector3.forward * .012f);
+            if (_frost != null) plate.SetActive(false);
+            var theme = ZapTheme.Current;
+            var ink = Frosted ? theme.glassTextColor : new Color(.94f,.98f,1);
+            var dim = Frosted ? theme.glassDimTextColor : new Color(.67f,.86f,.94f);
+            _title = Label("Heading", .40f, FontStyles.Bold, ink);
+            _body = Label("Explanation", .32f, FontStyles.Normal, ink);
             _body.enableAutoSizing = true; _body.fontSizeMin = .28f; _body.fontSizeMax = .32f;
-            _status = Label("Response status", .26f, FontStyles.Normal, new Color(.57f,.86f,1));
-            _handle = Label("Move handle", .23f, FontStyles.Normal, new Color(.67f,.86f,.94f));
+            _status = Label("Response status", .26f, FontStyles.Normal, Frosted ? theme.glassDimTextColor : new Color(.57f,.86f,1));
+            _handle = Label("Move handle", .23f, FontStyles.Normal, dim);
             _handle.text = "GRIP PANE TO MOVE";
             _collider = gameObject.AddComponent<BoxCollider>(); _collider.isTrigger = true;
             var body = gameObject.AddComponent<Rigidbody>(); body.isKinematic = true; body.useGravity = false;
@@ -51,6 +60,9 @@ namespace Zap.Constellation
             var text = obj.AddComponent<TextMeshPro>(); text.fontSize = size; text.fontStyle = style;
             text.richText = false; text.alignment = TextAlignmentOptions.TopLeft;
             text.color = color; text.overflowMode = TextOverflowModes.Ellipsis;
+            if (ZapTheme.Current.font != null) text.font = ZapTheme.Current.font;
+            // Ink on frosted glass needs no shadow.
+            if (Frosted) return text;
             // Local shadow keeps letters legible over bright room details through the glass.
             var material = text.fontMaterial;
             material.EnableKeyword("UNDERLAY_ON");
@@ -65,7 +77,9 @@ namespace Zap.Constellation
             if (_lastTitle == title && BodyText == body && StatusText == status && _lastPending == pending && _lastError == error) return;
             _lastTitle = title; BodyText = body; StatusText = status; _lastPending = pending; _lastError = error;
             _title.text = title; _body.text = body; _status.text = status;
-            _status.color = error ? new Color(1,.77f,.51f) : new Color(.57f,.86f,1);
+            var theme = ZapTheme.Current;
+            _status.color = Frosted ? (error ? theme.glassAlertColor : theme.glassDimTextColor)
+                : error ? new Color(1,.77f,.51f) : new Color(.57f,.86f,1);
             _material.SetFloat("_Pending", pending ? 1 : 0);
             // Grow with the answer instead of silently cutting it to the old small sign.
             float heading = Mathf.Clamp(_title.GetPreferredValues(title, ContentWidth, Mathf.Infinity).y, .065f, .16f);
@@ -74,6 +88,7 @@ namespace Zap.Constellation
             float height = .15f + heading + content + footer;
             _glass.localScale = new Vector3(Width, height, 1);
             _material.SetVector("_Size", new Vector4(Width,height,0,0));
+            if (_frost != null) _frost.SetSize(new Vector2(Width, height));
             _collider.size = new Vector3(Width,height,.025f);
             Layout(_handle, height/2 - .025f, .035f);
             Layout(_title, height/2 - .072f, heading);

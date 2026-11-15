@@ -62,20 +62,23 @@ namespace Zap.Core
                 return;
             }
 
-            mainCamera.clearFlags = CameraClearFlags.SolidColor;
+            // The designer's sky when the theme has one, otherwise the flat void colour.
+            mainCamera.clearFlags = ZapTheme.Current.skybox != null ? CameraClearFlags.Skybox : CameraClearFlags.SolidColor;
             mainCamera.backgroundColor = ZapTheme.Current.voidColor;
         }
 
         static void ConfigureLighting()
         {
-            RenderSettings.skybox = null;
+            var theme = ZapTheme.Current;
+            RenderSettings.skybox = theme.skybox;
             RenderSettings.ambientMode = AmbientMode.Flat;
-            RenderSettings.ambientLight = ZapTheme.Current.voidLift;
+            RenderSettings.ambientLight = theme.skybox != null ? theme.skyAmbient : theme.voidLift;
         }
 
-        // Cheap temporary depth cues; replace this root when the skybox arrives.
+        // Cheap temporary depth cues for the flat void; the sky replaces them.
         static void CreatePlaceholderStars()
         {
+            if (ZapTheme.Current.skybox != null) return;
             var shader = Shader.Find("Zap/Solid");
             if (shader == null) return;
             var primitive = GameObject.CreatePrimitive(PrimitiveType.Sphere);

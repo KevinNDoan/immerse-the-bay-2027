@@ -1,7 +1,9 @@
 using System;
 using System.IO;
+using TMPro;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.TextCore.LowLevel;
 using Zap.Core;
 
 namespace Zap.EditorTools
@@ -66,6 +68,125 @@ namespace Zap.EditorTools
                 AssetDatabase.SaveAssetIfDirty(theme);
             }
             return changed;
+        }
+
+        public const string FontFolder = "Assets/_Project/Art/Fonts/";
+        private static readonly string[] FontWeights = { "Regular", "SemiBold" };
+
+        [MenuItem("ZAP/Build Font Assets")]
+        public static void BuildFontAssetsMenu() => BuildFontAssets(false);
+
+        /// <summary>
+        /// Makes a dynamic TextMeshPro font asset for each Bricolage Grotesque weight the app uses,
+        /// then sets the Regular one as the theme font. Returns true if anything changed.
+        /// </summary>
+        public static bool BuildFontAssets(bool onlyMissing)
+        {
+            bool changed = false;
+            TMP_FontAsset regular = null;
+            foreach (var weight in FontWeights)
+            {
+                string fontPath = FontFolder + "BricolageGrotesque-" + weight + ".ttf";
+                string assetPath = FontFolder + "BricolageGrotesque-" + weight + " SDF.asset";
+                var existing = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(assetPath);
+                if (existing != null && onlyMissing)
+                {
+                    if (weight == "Regular") regular = existing;
+                    continue;
+                }
+                var font = AssetDatabase.LoadAssetAtPath<Font>(fontPath);
+                if (font == null) { Debug.LogWarning($"ZAP: font file missing at {fontPath}."); continue; }
+                if (existing != null) AssetDatabase.DeleteAsset(assetPath);
+
+                var asset = TMP_FontAsset.CreateFontAsset(font, 90, 9, GlyphRenderMode.SDFAA, 1024, 1024,
+                    AtlasPopulationMode.Dynamic, true);
+                if (asset == null) { Debug.LogError($"ZAP: could not create a font asset from {fontPath}."); continue; }
+                asset.name = "BricolageGrotesque-" + weight + " SDF";
+                // Pre-fill the characters the app shows most, so the first frame does not stall.
+                asset.TryAddCharacters(" !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~·—–’“”…●", out _);
+
+                AssetDatabase.CreateAsset(asset, assetPath);
+                for (int i = 0; i < asset.atlasTextures.Length; i++)
+                {
+                    var atlas = asset.atlasTextures[i];
+                    if (atlas == null) continue;
+                    atlas.name = asset.name + " Atlas" + (i > 0 ? " " + i : "");
+                    AssetDatabase.AddObjectToAsset(atlas, asset);
+                }
+                asset.material.name = asset.name + " Material";
+                AssetDatabase.AddObjectToAsset(asset.material, asset);
+                EditorUtility.SetDirty(asset);
+                AssetDatabase.SaveAssetIfDirty(asset);
+                Debug.Log($"ZAP: font asset created at {assetPath}.");
+                if (weight == "Regular") regular = asset;
+                changed = true;
+            }
+
+            var theme = AssetDatabase.LoadAssetAtPath<ZapTheme>(ThemeAssetPath);
+            if (theme != null && regular != null && theme.font != regular)
+            {
+                theme.font = regular;
+                EditorUtility.SetDirty(theme);
+                AssetDatabase.SaveAssetIfDirty(theme);
+                Debug.Log("ZAP: theme font set to Bricolage Grotesque Regular.");
+                changed = true;
+            }
+            return changed;
+        }
+
+        public const string SkyMaterialPath = "Assets/_Project/Materials/ZapSky.mat";
+        // Unity's six-sided skybox: +Z front, -Z back, -X left, +X right, +Y up, -Y down.
+        private static readonly (string property, string file)[] SkyFaces =
+        {
+            ("_FrontTex", "sky_front.png"), ("_BackTex", "sky_back.png"),
+            ("_LeftTex", "sky_left.png"), ("_RightTex", "sky_right.png"),
+            ("_UpTex", "sky_up.png"), ("_DownTex", "sky_down.png"),
+        };
+
+        [MenuItem("ZAP/Build Sky")]
+        public static void BuildSkyMenu() => BuildSky(false);
+
+        /// <summary>
+        /// Builds the six-sided sky material from Art/Sky and sets it as the theme's skybox.
+        /// Returns true if anything changed.
+        /// </summary>
+        public static bool BuildSky(bool onlyMissing)
+        {
+            var theme = AssetDatabase.LoadAssetAtPath<ZapTheme>(ThemeAssetPath);
+            if (theme == null) return false;
+            var material = AssetDatabase.LoadAssetAtPath<Material>(SkyMaterialPath);
+            if (material != null && onlyMissing && theme.skybox == material && theme.skyPanorama != null) return false;
+
+            var faces = new Texture2D[SkyFaces.Length];
+            for (int i = 0; i < SkyFaces.Length; i++)
+            {
+                faces[i] = AssetDatabase.LoadAssetAtPath<Texture2D>(ZapArtImporter.SkyFolder + SkyFaces[i].file);
+                if (faces[i] == null) { Debug.LogWarning($"ZAP sky: {SkyFaces[i].file} is missing from {ZapArtImporter.SkyFolder}."); return false; }
+            }
+
+            var shader = Shader.Find("Skybox/6 Sided");
+            if (shader == null) { Debug.LogError("ZAP sky: shader Skybox/6 Sided not found."); return false; }
+            if (material == null)
+            {
+                EnsureFolder("Assets/_Project/Materials");
+                material = new Material(shader) { name = "ZapSky" };
+                AssetDatabase.CreateAsset(material, SkyMaterialPath);
+            }
+            material.shader = shader;
+            for (int i = 0; i < SkyFaces.Length; i++) material.SetTexture(SkyFaces[i].property, faces[i]);
+            material.SetColor("_Tint", new Color(.5f, .5f, .5f, .5f)); // neutral: shows the images as drawn
+            material.SetFloat("_Exposure", 1f);
+            material.SetFloat("_Rotation", 0f);
+            EditorUtility.SetDirty(material);
+            AssetDatabase.SaveAssetIfDirty(material);
+
+            theme.skybox = material;
+            var panorama = AssetDatabase.LoadAssetAtPath<Texture2D>(ZapArtImporter.SkyFolder + "sky_panorama.png");
+            if (panorama != null) theme.skyPanorama = panorama;
+            EditorUtility.SetDirty(theme);
+            AssetDatabase.SaveAssetIfDirty(theme);
+            Debug.Log($"ZAP sky: {SkyMaterialPath} built from Art/Sky and set as the theme skybox.");
+            return true;
         }
 
         private static bool Assign(ref Texture2D slot, string path, bool onlyEmpty)

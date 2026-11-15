@@ -22,6 +22,35 @@ namespace Zap.Core
         public Color paper = ZapColors.Paper;
         public Color ink = ZapColors.Ink;
 
+        [Header("Sky (when set, replaces the flat void colour; filled by ZAP > Build Sky)")]
+        public Material skybox;
+        [Tooltip("Flat ambient light while the sky is showing, so the marbles match the light sky.")]
+        public Color skyAmbient = new Color(.80f, .81f, .84f, 1f);
+        [Tooltip("The sky as one 2:1 panorama; frosted glass shows a blurred copy of it.")]
+        public Texture2D skyPanorama;
+
+        [Header("Frosted glass UI (cards, notes, labels, panes)")]
+        [Tooltip("Off brings back the old dark panels and white text.")]
+        public bool useFrostedGlass = true;
+        public Color glassTint = new Color(1f, 1f, 1f, .30f);
+        [Tooltip("Corner radius in metres. Figma 18 px = 9 mm.")]
+        public float glassCornerRadius = .009f;
+        [Tooltip("How far the soft white glow reaches in from the edge, in metres.")]
+        public float glassGlowWidth = .008f;
+        [Range(0f, 1f)] public float glassGlowStrength = .55f;
+        [Range(0f, 1f)] public float glassEdgeStrength = .6f;
+        [Tooltip("0 = plain tint, 1 = the blurred sky shows through.")]
+        [Range(0f, 1f)] public float glassFrost = 1f;
+        [Tooltip("Blur of the sky seen through the glass, as a mip level. Higher is blurrier.")]
+        public float glassSkyBlur = 6f;
+        [Range(0f, 1f)] public float glassOpacity = .92f;
+        [Tooltip("Space between text and the glass edge, in metres.")]
+        public float glassPadding = .012f;
+        public Color glassTextColor = ZapColors.Ink;
+        public Color glassDimTextColor = new Color(ZapColors.Ink.r, ZapColors.Ink.g, ZapColors.Ink.b, .65f);
+        [Tooltip("Problem and error text on glass.")]
+        public Color glassAlertColor = new Color(.878f, .318f, .494f, 1f);
+
         [Header("Node")]
         public float nodeDiameter = .11f;
         public float nodeSelectedDiameter = .125f;

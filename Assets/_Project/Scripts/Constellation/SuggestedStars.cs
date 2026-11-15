@@ -15,6 +15,9 @@ namespace Zap.Constellation
             public SphereCollider Collider;
             public XRSimpleInteractable Interactable;
             public TextMeshPro Label;
+            public FrostPanel Glass;
+            public string GlassText;
+            public Bounds GlassBounds;
             public string Topic;
         }
 
@@ -71,7 +74,9 @@ namespace Zap.Constellation
                 Orb = orb.transform,
                 Collider = collider,
                 Interactable = interactable,
-                Label = label
+                Label = label,
+                // A small frosted pill behind the label when the theme turns glass on.
+                Glass = FrostPanel.Create(labelObject.transform, "Label glass", new Vector3(0f, 0f, .002f))
             };
             interactable.selectEntered.AddListener(_ => Keep(index));
             root.SetActive(false);
@@ -168,11 +173,25 @@ namespace Zap.Constellation
                 star.Orb.localScale = Vector3.one * theme.suggestedNodeDiameter;
                 star.Collider.radius = Mathf.Max(.045f, .75f * theme.suggestedNodeDiameter);
                 star.Label.fontSize = theme.suggestedTextSize;
-                star.Label.color = theme.suggestedTextColor;
+                star.Label.color = star.Glass != null ? theme.glassDimTextColor : theme.suggestedTextColor;
                 if (theme.font != null) star.Label.font = theme.font;
                 star.Label.rectTransform.sizeDelta = new Vector2(.3f, .08f);
                 star.Label.transform.localPosition = Vector3.down * (theme.suggestedNodeDiameter * .75f);
                 star.Label.transform.rotation = Quaternion.LookRotation(star.Label.transform.position - camera.position);
+                if (star.Glass != null)
+                {
+                    if (star.GlassText != star.Label.text)
+                    {
+                        star.Label.ForceMeshUpdate();
+                        star.GlassBounds = star.Label.textInfo.characterCount > 0 ? star.Label.textBounds : new Bounds();
+                        star.GlassText = star.Label.text;
+                    }
+                    // A slim pill: half the note's glass padding around the label text.
+                    float pad = theme.glassPadding * .5f;
+                    var b = star.GlassBounds;
+                    star.Glass.SetSize(new Vector2(b.size.x + pad * 4f, b.size.y + pad * 2f));
+                    star.Glass.transform.localPosition = new Vector3(b.center.x, b.center.y, .002f);
+                }
 
                 float revealTime = elapsed - i * .12f;
                 float scale = revealTime <= 0 ? 0 : Mathf.SmoothStep(0, 1, Mathf.Clamp01(revealTime / .35f));

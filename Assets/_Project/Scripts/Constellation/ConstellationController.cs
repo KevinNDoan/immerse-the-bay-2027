@@ -38,7 +38,6 @@ namespace Zap.Constellation
         private TopicBall _voiceTarget, _worldNode, _lineStart;
         private string _voiceAction;
         private string _savePath;
-        private string _typed = "Volcanoes";
         private bool _busy, _recordButton, _trigger, _worldVisible, _pulling, _dirty;
         private Vector3 _pullMidpoint;
         private float _pullDistance, _lastSave, _recordStart;
@@ -533,14 +532,11 @@ namespace Zap.Constellation
         {
             if (ZapPlatform.IsDesktop) return;
             if (!(Application.isEditor || Debug.isDebugBuild) || Application.platform == RuntimePlatform.Android || _voice == null) return;
-            GUILayout.BeginArea(new Rect(16, 16, 440, 250), GUI.skin.box);
+            GUILayout.BeginArea(new Rect(16, 16, 440, 150), GUI.skin.box);
             GUILayout.Label("ZAP! — V: speak new · B: speak edit · Enter: world · Esc: return");
             GUILayout.Label(Status);
-            _typed = GUILayout.TextField(_typed, 2000);
             GUI.enabled = !_busy && !_voice.IsRecording;
             GUILayout.BeginHorizontal();
-            if (GUILayout.Button("New ball")) SubmitText(_typed, false);
-            if (GUILayout.Button("Edit selected")) SubmitText(_typed, true);
             if (GUILayout.Button("Enter") && Current != null) EnterWorld(Current);
             if (GUILayout.Button("Return")) LeaveWorld();
             GUILayout.EndHorizontal();

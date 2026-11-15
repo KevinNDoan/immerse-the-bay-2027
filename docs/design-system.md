@@ -93,6 +93,24 @@ Pieces that sit further away need physically larger text to look the same size, 
 | Ink | `#0B0814` | Text on the sticky note |
 | Ink 60% | | Secondary text on the sticky note |
 
+#### Glass (all UI panels)
+
+Chosen 2026-11-15. Every UI panel is soft frosted glass. That covers the sticky notes, suggested label, voice indicator and pill, world title card, pending marker and pill, controls cards and messages.
+
+The recipe, as built in Figma:
+- **Fill:** white at 30%. The suggested label uses 26%.
+- **Background blur:** 28. The title card uses 40.
+- **Edge:** a soft white inner glow (radius 10, 55%) instead of a stroke, plus a faint 1 px bright top edge (white 60%). There is no hard outline.
+- **Shadow:** a soft drop shadow, Ink at 12%, 10 px down, 30 blur.
+- **Content:** text and icons on glass are Ink.
+- **Pointed-at state:** a soft blurred white ring (4 px, 5 blur).
+- **Progress:** the pending marker's progress ring is lightning yellow.
+- **Dark notes:** the Dark note style is dark glass, Ink at 38%, with white text.
+
+In the headset, real background blur is expensive: it re-renders what is behind every panel for both eyes, every frame, and post-processing is off. A shader that samples a pre-blurred copy of the skybox behind each panel would give the same look cheaply. That is core-lane work.
+
+**Nodes:** the nodes are the marbles built in Unity. The star images and node states in this brief (5.1) are retired, and no more node art is designed. The sticky notes (5.2, 5.3) and the suggested-topic label (5.4) stay; they are UI that sits next to a node, not the node itself.
+
 #### Brand colours (logo and app icon)
 
 Chosen 2026-11-15. The palette is inspired by the Louis Vuitton VIA case-study site: silver framing with one electric accent. In the Figma file these are the `brand/*` variables in the "ZAP colour" collection, and the logo layers are bound to them.

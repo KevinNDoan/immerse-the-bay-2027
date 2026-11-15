@@ -19,6 +19,13 @@ namespace Zap.Constellation
         private Vector3 _flight;
         private AudioSource _sound;
         private AudioClip _launchSound, _impactSound;
+        public const float ThrowShatterDistance = 2f;
+        public bool HasShattered { get; private set; }
+        public bool HasCover => IsActive && HasShattered && Elapsed >= _flightDuration + 1;
+        private GameObject _flyingOrb;
+        private Material _flightMaterial;
+        private Vector3 _flightOrigin;
+        private float _flightDuration, _flightDistance;
 
         private void Awake()
         {
@@ -52,6 +59,13 @@ namespace Zap.Constellation
                 }
             }
             _mesh.vertices = _vertices; _mesh.triangles = indices; _mesh.colors = colors; _mesh.uv = uv; _mesh.uv2 = edges;
+            _flyingOrb=GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            _flyingOrb.name="Travelling crystal"; _flyingOrb.transform.SetParent(transform,false);
+            _flyingOrb.transform.localScale=Vector3.one*.15f;
+            var flightCollider=_flyingOrb.GetComponent<Collider>(); flightCollider.enabled=false; Destroy(flightCollider);
+            _flightMaterial=new Material(Shader.Find("Zap/Crystal"));
+            _flightMaterial.SetInt("_ZTest",(int)CompareFunction.Always);
+            Configure(_flyingOrb.GetComponent<MeshRenderer>(),_flightMaterial);
             BuildSound();
             Cancel();
         }
@@ -63,7 +77,7 @@ namespace Zap.Constellation
             renderer.receiveShadows = false;
         }
 
-        public void Begin(Vector3 origin, Vector3 direction, Texture preview = null)
+        public void Begin(Vector3 origin, Vector3 direction, Texture preview = null, float flightDistance = 0, float flightSpeed = 4)
         {
             var camera = Camera.main;
             _flight = direction.sqrMagnitude > .01f ? direction.normalized : camera != null ? camera.transform.forward : Vector3.forward;
@@ -75,18 +89,23 @@ namespace Zap.Constellation
             _burst.transform.SetPositionAndRotation(origin, Quaternion.identity);
             _burstMaterial.SetTexture("_PreviewTex", preview != null ? preview : Texture2D.whiteTexture);
             _burstMaterial.SetFloat("_HasPreview", preview != null ? 1 : 0);
+            _flightOrigin=origin; _flightDistance=Mathf.Clamp(flightDistance,0,5);
+            _flightDuration=_flightDistance/Mathf.Clamp(flightSpeed,3,8);
+            _flyingOrb.transform.position=origin;
+            _flightMaterial.SetTexture("_PreviewTex",preview!=null?preview:Texture2D.whiteTexture);
+            _flightMaterial.SetFloat("_HasPreview",preview!=null?1:0);
+            _flightMaterial.SetFloat("_Focus",1);
             _started = Time.unscaledTime; _readyAt = -1; IsActive = true;
-            _tunnel.SetActive(true); _burst.SetActive(true);
+            HasShattered=false; _tunnel.SetActive(false); _burst.SetActive(false);
+            _flyingOrb.SetActive(_flightDistance>0);
             _sound.transform.position = origin;
             _sound.Stop();
-            _sound.Play();
-            if (_impactSound != null) _sound.PlayOneShot(_impactSound, 1.4f);
-            RenderAt(0, 0);
+            if (_flightDistance<=0) Shatter();
         }
 
         public void MarkReady()
         {
-            if (IsActive && _readyAt < 0) _readyAt = Mathf.Max(Elapsed, 1.8f);
+            if (IsActive && _readyAt < 0) _readyAt = Mathf.Max(Elapsed, _flightDuration+1.8f);
         }
 
         public void Cancel()
@@ -95,6 +114,7 @@ namespace Zap.Constellation
             if (_tunnel != null) _tunnel.SetActive(false);
             if (_burst != null) _burst.SetActive(false);
             if (_sound != null) _sound.Stop();
+            if (_flyingOrb != null) _flyingOrb.SetActive(false);
         }
 
         private void BuildSound()
@@ -127,9 +147,26 @@ namespace Zap.Constellation
         {
             if (!IsActive) return;
             float age = Elapsed;
+            if (!HasShattered)
+            {
+                float distance=Mathf.Min(_flightDistance,age/Mathf.Max(.001f,_flightDuration)*_flightDistance);
+                _flyingOrb.transform.position=_flightOrigin+_flight*distance;
+                if(distance<_flightDistance) return;
+                Shatter();
+            }
             float fade = _readyAt >= 0 ? Mathf.SmoothStep(0, 1, (age-_readyAt)/.8f) : 0;
-            RenderAt(age, fade);
+            RenderAt(age-_flightDuration, fade);
             if (fade >= 1) Cancel();
+        }
+
+        private void Shatter()
+        {
+            HasShattered=true; _flyingOrb.SetActive(false);
+            _burst.transform.position=_flightOrigin+_flight*_flightDistance;
+            _tunnel.SetActive(true);_burst.SetActive(true);
+            _sound.transform.position=_burst.transform.position;_sound.Play();
+            if (_impactSound!=null) _sound.PlayOneShot(_impactSound,1.4f);
+            RenderAt(0,0);
         }
 
         private void RenderAt(float age, float fade)
@@ -137,8 +174,9 @@ namespace Zap.Constellation
             if (Camera.main != null) _tunnel.transform.position = Camera.main.transform.position;
             float opacity = Mathf.SmoothStep(0, 1, age/.8f) * (1-fade);
             _tunnelMaterial.SetFloat("_Opacity", opacity);
-            // Ease to a calm moving cloud during longer generation waits.
-            _tunnelMaterial.SetFloat("_Travel", Mathf.Min(age, 5) + Mathf.Max(0, age-5)*.16f);
+            // Keep the same travel speed for the entire provider wait. Opacity
+            // still eases in/out, but motion never slows after the first seconds.
+            _tunnelMaterial.SetFloat("_Travel", age);
             if (age > 1.5f) { _burst.SetActive(false); return; }
             _burstMaterial.SetFloat("_Opacity", (1-Mathf.SmoothStep(0,1,(age-.35f)/1.15f))*(1-fade));
             for (int i = 0; i < ShardCount; i++)
@@ -163,6 +201,7 @@ namespace Zap.Constellation
             if (_tunnelMaterial != null) Destroy(_tunnelMaterial);
             if (_burstMaterial != null) Destroy(_burstMaterial);
             if (_launchSound != null) Destroy(_launchSound);
+            if (_flightMaterial != null) Destroy(_flightMaterial);
         }
     }
 }

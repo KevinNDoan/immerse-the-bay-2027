@@ -53,7 +53,8 @@ namespace Zap.World.Tests
             StringAssert.Contains("Generation disabled", f.Controller.Status);
             StringAssert.Contains("Parent idea", f.Server.Request);
             Assert.Contains(f.Target, (System.Collections.ICollection)f.Controller.Balls);
-            yield return new WaitForSeconds(2.8f);
+            // Include the new free-flight interval before the shatter/fade.
+            yield return new WaitForSeconds(3.6f);
             Assert.IsFalse(f.Journey.IsActive);
             Assert.IsTrue(f.Source.IsVisible);
         }

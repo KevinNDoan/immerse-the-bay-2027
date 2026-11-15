@@ -31,6 +31,14 @@ class Settings:
     world_provider: str = "auto"
     world_generation_enabled: bool = False
     world_test_world_id: str = ""
+    world_render_mode: str = "mesh"
+    world_splat_quality: str = "500k"
+
+    def __post_init__(self):
+        if self.world_render_mode not in ("mesh", "splats"):
+            raise ValueError("WORLD_RENDER_MODE must be mesh or splats.")
+        if self.world_splat_quality not in ("100k", "150k", "500k"):
+            raise ValueError("WORLD_SPLAT_QUALITY must be 100k, 150k or 500k.")
 
     def __repr__(self) -> str:
         return f"Settings(mode={self.mode!r}, model={self.model!r}, port={self.port})"
@@ -68,7 +76,9 @@ def load_settings(env_file: Path | None = None) -> Settings:
                     worldlabs_model=_text("WORLD_LABS_MODEL", "marble-1.1"),
                     world_provider=_text("WORLD_PROVIDER", "auto"),
                     world_generation_enabled=_text("WORLD_GENERATION_ENABLED", "false").lower() == "true",
-                    world_test_world_id=_text("WORLD_TEST_WORLD_ID", ""))
+                    world_test_world_id=_text("WORLD_TEST_WORLD_ID", ""),
+                    world_render_mode=_text("WORLD_RENDER_MODE", "mesh"),
+                    world_splat_quality=_text("WORLD_SPLAT_QUALITY", "500k"))
 
 
 def _text(name: str, default: str, *, empty_is_default: bool = True) -> str:

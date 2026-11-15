@@ -6,7 +6,7 @@ Shader "Zap/Crystal Shards"
         Tags { "RenderPipeline"="UniversalPipeline" "Queue"="Transparent+10" "RenderType"="Transparent" }
         Pass
         {
-            Cull Off ZWrite Off
+            Cull Off ZWrite Off ZTest Always
             Blend SrcAlpha OneMinusSrcAlpha
             HLSLPROGRAM
             #pragma vertex vert

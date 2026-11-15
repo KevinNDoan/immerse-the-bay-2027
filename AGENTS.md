@@ -5,10 +5,10 @@ Updated 2026-11-14. This file is read by AI coding tools. Keep it in this style:
 ## Hard constraints
 
 - Never edit files outside the folders your lane owns. See Lanes.
-- Never hand-edit `.unity`, `.prefab`, `.asset`, `.mat` or `.meta` files. Build scenes and objects from C# (editor scripts or at startup).
+- Never hand-edit `.unity`, `.prefab`, `.asset`, `.mat` or `.meta` files. Build scenes and objects from C# (editor scripts or at startup). Unity MCP tools that write those files count as hand-editing.
 - Never write keys, tokens or passwords into any tracked file. Keys live in the owner-selected root `.env` or fallback `relay/.env`; both are gitignored.
 - Never create accounts or sign in to any service.
-- Never start Unity (Editor or batch) unless your brief says to. Only one Unity process can open this project.
+- Never start Unity (Editor or batch) unless your brief says to. Only one Unity process can open this project. Driving an Editor a person already opened, through the `unity` MCP, is allowed; see Unity MCP.
 - Never change `Packages/manifest.json` or anything in `ProjectSettings/`. Request the change in your handoff.
 - Never run git commands that change state if a brief in `docs/tasks/` started you. The coordinator commits.
 - If a person is driving you: commit to that person's lane branch (`design/nodes`, `world/immersion` or `core/app`) when they ask. Never commit to or merge into `main`.
@@ -51,6 +51,20 @@ Updated 2026-11-14. This file is read by AI coding tools. Keep it in this style:
 - Reuse before writing. Existing pieces are listed under "Building blocks already in the repo" in `docs/planning.md`.
 - You cannot compile Unity code yourself. Re-read every file for missing `using` lines and wrong type names before you stop.
 - Coordinator's compile check: `/Applications/Unity/Hub/Editor/6000.6.9f1/Unity.app/Contents/MacOS/Unity -batchmode -nographics -quit -projectPath . -logFile Logs/compile.log`
+
+## Unity MCP
+
+- `com.coplaydev.unity-mcp` v10.3.0 is in `Packages/manifest.json`, added by the core lane owner on 2026-11-14. The rule against changing `Packages/manifest.json` still applies to everyone else.
+- Its bridge is Editor-only, but its small `MCPForUnity.Runtime` assembly also compiles into player builds. A Quest build with this package present has not been run yet; check the first one.
+- The server is registered as `unity` in `.mcp.json` and runs with `uvx` (needs `uv`). No account, no key.
+- When the Unity Editor is open, use the `unity` MCP tools in place of batch mode: `refresh_unity` then `read_console` to check compiling, `run_tests`, `manage_editor` (`play`, `stop`), `manage_camera` (`screenshot`).
+- When the Editor is closed, use the batch-mode commands in this file. The MCP bridge does not start in batch mode.
+- Never run a batch-mode Unity command while the Editor has this project open.
+- Always pass `output_folder: "Logs/screenshots"` to `screenshot`. The default writes into `Assets/Screenshots`.
+- Do not use the MCP tools that edit scenes, prefabs, materials or assets. The rule against hand-editing those files covers them.
+- Stop Play mode before you finish.
+- Per machine, once, with Unity closed: `defaults write com.unity3d.UnityEditor5.x "MCPForUnity.UseHttpTransport" -bool false` and `defaults write com.unity3d.UnityEditor5.x "MCPForUnity.TelemetryDisabled" -bool true`. The first makes the bridge start by itself on port 6400.
+- Play mode in the Editor runs headset mode with the XR Interaction Simulator. `ZapPlatform.IsDesktop` is false there.
 
 ## Relay
 

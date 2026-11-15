@@ -12,6 +12,7 @@ namespace Zap.Core
         public bool CreateHeld, EditHeld, AskHeld, EnterDown, ExitDown, EventDown;
         public bool LeftGrip, RightGrip, RightTrigger;
         public bool ViewDown, PauseDown;
+        public bool TutorialHeld;
         public Vector2 Move, Look;
         private bool _enter, _exit, _event;
         private bool _view, _pause;
@@ -25,6 +26,7 @@ namespace Zap.Core
             LeftGrip = Read(left, CommonUsages.gripButton);
             RightGrip = Read(right, CommonUsages.gripButton);
             RightTrigger = Read(right, CommonUsages.triggerButton);
+            TutorialHeld = Read(left, CommonUsages.primary2DAxisClick);
             left.TryGetFeatureValue(CommonUsages.primary2DAxis, out Move);
             right.TryGetFeatureValue(CommonUsages.primary2DAxis, out Look);
             bool enter = Read(left, CommonUsages.primaryButton);
@@ -33,8 +35,11 @@ namespace Zap.Core
             bool view = Read(right, CommonUsages.primary2DAxisClick);
             bool pause = Read(left, CommonUsages.primary2DAxisClick);
             var keyboard = Keyboard.current;
-            if (keyboard != null && (Application.isEditor || Debug.isDebugBuild))
+            // Typing a topic must not trigger the V, B, Enter, Escape, Space and arrow shortcuts.
+            if (keyboard != null && !ZapPlatform.IsTyping && !ZapPlatform.IsMenuOpen
+                && (Application.isEditor || Debug.isDebugBuild || ZapPlatform.IsDesktop))
             {
+                TutorialHeld |= keyboard.backspaceKey.isPressed;
                 CreateHeld |= keyboard.vKey.isPressed;
                 EditHeld |= keyboard.bKey.isPressed;
                 AskHeld |= keyboard.nKey.isPressed;

@@ -5,6 +5,7 @@
         "Zap.Net",
         "Zap.World",
         "Zap.Constellation",
+        "Zap.Core",
         "Unity.XR.Interaction.Toolkit",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner",

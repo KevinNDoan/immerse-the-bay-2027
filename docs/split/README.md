@@ -58,7 +58,7 @@ These are the real danger. Each one holds work from more than one lane today.
 
 ## Step 0: pull those files apart before anyone branches
 
-**Status, 2026-11-14:** built and checked on the branch `core/step0`. It is not merged into `main` yet. Do not branch until it is.
+**Status, 2026-11-14:** done and merged into `main` (pull request 2). Branch from `main` now.
 
 The core developer does this first and tells the others when it is merged. Details are in [core.md](core.md).
 
@@ -109,10 +109,9 @@ git checkout -- "Assets/Settings/Project Configuration/UniversalRenderPipelineGl
 
 ## Testing in the Unity Editor on your own laptop
 
-Two things in the project are set for the demo laptop and stop the Editor reaching a relay on your machine. Both fixes are local; do not commit either.
+Nothing needs setting up. The Editor talks to a relay on your own machine at `http://127.0.0.1:8787`, and plain HTTP is allowed in the Editor and in development builds.
 
-- **Relay address.** The project carries the demo laptop's network address. To use a relay on your own machine, create a text file named `zap-relay-url.txt` containing `http://127.0.0.1:8787` in the app's data folder. On a Mac that is `~/Library/Application Support/Immerse the Bay/Immerse the Bay/`.
-- **Plain HTTP.** The Editor refuses `http://` addresses by default. In Unity, open Edit > Project Settings > Player > Other Settings and set "Allow downloads over HTTP" to "Always allowed". This changes `ProjectSettings/ProjectSettings.asset`, so undo it before you commit, with the command above.
+Only if your relay runs on a different machine: create a text file named `zap-relay-url.txt` containing its address (for example `http://192.168.1.20:8787`) in the app's data folder. On a Mac that is `~/Library/Application Support/Immerse the Bay/Immerse the Bay/`. That file is outside the repo, so it is never committed.
 
 Start the relay without keys for testing, so it costs nothing:
 

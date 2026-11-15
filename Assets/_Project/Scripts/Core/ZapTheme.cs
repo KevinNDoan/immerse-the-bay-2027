@@ -39,12 +39,50 @@ namespace Zap.Core
         [Header("Line between nodes")]
         public float lineWidth = .0025f;
 
+        [Header("Suggested topics")]
+        public float suggestedNodeDiameter = .06f;
+        public float suggestedDistance = .24f;
+        public Color suggestedColor = new Color(.4f, .4f, .4f, 1f);
+        public float suggestedTextSize = .2f;
+        public Color suggestedTextColor = new Color(1f, 1f, 1f, .7f);
+
         [Header("Controls card")]
-        public Vector2 controlsCardSize = new Vector2(.5f, .32f);
-        public float controlsTextSizeMin = .22f;
-        public float controlsTextSizeMax = .35f;
-        [Tooltip("The card never comes closer to the face than this.")]
+        [Tooltip("How far ahead of the person the card sits, in metres.")]
+        public float controlsDistance = 1.2f;
+        [Tooltip("Closest distance of the in-world controls card from the face, in metres.")]
         public float controlsMinDistanceFromFace = .6f;
+        [Tooltip("How far below eye height the centre of the card sits, in metres.")]
+        public float controlsDropBelowEyes = .1f;
+        [Tooltip("Card size while a tutorial step shows, in metres.")]
+        public Vector2 cardSize = new Vector2(.56f, .41f);
+        [Tooltip("Card size while no tutorial step shows, in metres.")]
+        public Vector2 cardCompactSize = new Vector2(.56f, .31f);
+        [Tooltip("Space between the card edge and its content, in metres.")]
+        public float cardPadding = .03f;
+        [Tooltip("Title text size on the card.")]
+        public float cardTitleSize = .4f;
+        [Tooltip("Tutorial step text size on the card.")]
+        public float cardStepSize = .34f;
+        [Tooltip("Status text size on both card layouts.")]
+        public float cardStatusSize = .32f;
+        [Tooltip("Hint text size on the card.")]
+        public float cardHintSize = .24f;
+        [Tooltip("Controller hint text size.")]
+        public float hintTextSize = .12f;
+        [Tooltip("Controller hint line width, in metres.")]
+        public float hintLineWidth = .0015f;
+        [Tooltip("Translucent background colour of the controls card.")]
+        public Color cardColor = new Color(.078f, .051f, .149f, .9f);
+        [Tooltip("Colour of the card outline.")]
+        public Color cardOutlineColor = new Color(.25f, .24f, .29f, 1f);
+        [Tooltip("Width of the card outline, in metres.")]
+        public float cardOutlineWidth = .004f;
+        [Tooltip("Primary controls card text colour.")]
+        public Color cardTextColor = new Color(.83f, .82f, .86f, 1f);
+        [Tooltip("Secondary controls card text colour.")]
+        public Color cardDimTextColor = new Color(.83f, .82f, .86f, .6f);
+        [Tooltip("Colour of a highlighted controller hint.")]
+        public Color hintHighlightColor = Color.white;
 
         [Header("Star images (optional; crystal previews remain available)")]
         [Tooltip("Use designer star art for nodes without a world preview. Recording always uses the glowing crystal.")]

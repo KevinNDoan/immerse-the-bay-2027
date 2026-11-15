@@ -22,6 +22,8 @@ namespace Zap.Constellation
     [Serializable] public class ConstellationData
     {
         public int version = 1;
+        public string name = "";
+        public string updated = "";
         public NodeData[] nodes = Array.Empty<NodeData>();
         public NodeEdge[] edges = Array.Empty<NodeEdge>();
     }
@@ -30,17 +32,23 @@ namespace Zap.Constellation
     {
         public static ConstellationData Load(string path)
         {
+            return TryLoad(path, out var data) ? data : new ConstellationData();
+        }
+
+        internal static bool TryLoad(string path, out ConstellationData data)
+        {
             foreach (var candidate in new[] { path, path + ".bak" })
             {
                 if (!File.Exists(candidate)) continue;
                 try
                 {
-                    var data = JsonUtility.FromJson<ConstellationData>(File.ReadAllText(candidate));
-                    if (data != null && data.version == 1 && data.nodes != null) return data;
+                    data = JsonUtility.FromJson<ConstellationData>(File.ReadAllText(candidate));
+                    if (data != null && data.version == 1 && data.nodes != null) return true;
                 }
                 catch (Exception exception) { Debug.LogWarning("Could not read saved constellation: " + exception.Message); }
             }
-            return new ConstellationData();
+            data = null;
+            return false;
         }
 
         public static void Save(string path, ConstellationData data)

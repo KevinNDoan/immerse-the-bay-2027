@@ -11,6 +11,8 @@ namespace Zap.Constellation
     [RequireComponent(typeof(Rigidbody), typeof(SphereCollider), typeof(XRGrabInteractable))]
     public sealed class TopicBall : MonoBehaviour
     {
+        public const float TossSpeed = 2.5f;
+        private const float HighlightScale = 1.25f;
         // Compact note exports: 16 Figma px of shadow padding plus a 6 px corner, at 4x.
         private const float CompactNoteBorderPixels = 88f;
         private const float CompactNoteInset = 64f / ZapArt.PixelsPerMetre;
@@ -22,9 +24,12 @@ namespace Zap.Constellation
         public Rigidbody Body { get; private set; }
         public CrystalBallVisual Crystal { get; private set; }
         public Vector3 LastThrowVelocity { get; private set; }
+        public bool IsTossed { get; private set; }
+        public bool Highlighted { get; set; }
         public event Action<TopicBall> Selected;
         public event Action<TopicBall> Grabbed;
         public event Action<TopicBall> EnterRequested;
+        public event Action<TopicBall> Tossed;
         private TextMeshPro _note;
         private Transform _orb;
         private Transform _star;
@@ -40,6 +45,8 @@ namespace Zap.Constellation
         private int _releaseVersion;
         private float _scale = .15f;
         private string _previewImage;
+        private float _tossedAt;
+        private Vector3 _tossStartScale, _tossStarStartScale;
 
         public void Initialize(NodeData data, Material material)
         {
@@ -135,6 +142,7 @@ namespace Zap.Constellation
         }
         private void OnGrab(SelectEnterEventArgs args)
         {
+            Body.constraints = RigidbodyConstraints.None;
             _heldSince = Time.unscaledTime;
             _releaseVersion++;
             LastThrowVelocity = Vector3.zero;
@@ -144,7 +152,7 @@ namespace Zap.Constellation
         private void OnRelease(SelectExitEventArgs args)
         {
             // Disabling a node during travel must never start another journey.
-            if (args.isCanceled || !isActiveAndEnabled) return;
+            if (args.isCanceled || !isActiveAndEnabled || IsTossed) return;
             StartCoroutine(CheckRelease(++_releaseVersion, Time.unscaledTime - _heldSince));
         }
 
@@ -153,7 +161,7 @@ namespace Zap.Constellation
             // XRI applies detach velocity after selectExited, at the end of its update.
             yield return new WaitForFixedUpdate();
             yield return null;
-            if (version != _releaseVersion || Grab.isSelected || Camera.main == null) yield break;
+            if (version != _releaseVersion || Grab.isSelected || IsTossed || Camera.main == null) yield break;
             var head = Camera.main.transform;
             var velocity = Body.linearVelocity;
             if (!IsTravelThrow(velocity, transform.position-head.position, head.forward, heldSeconds)) yield break;
@@ -171,6 +179,37 @@ namespace Zap.Constellation
 
         private void OnDisable() { _releaseVersion++; StopAllCoroutines(); }
 
+        public static bool IsToss(Vector3 releaseVelocity)
+        {
+            return releaseVelocity.sqrMagnitude >= TossSpeed * TossSpeed;
+        }
+
+        // Explicit place/discard API retained for callers that requested removal.
+        // XR selectExited uses CheckRelease above: a physical throw travels, never deletes.
+        public void Release(Vector3 velocity)
+        {
+            if (IsTossed) return;
+            Body.angularVelocity = Vector3.zero;
+            if (!IsToss(velocity))
+            {
+                Body.linearVelocity = Vector3.zero;
+                Body.constraints = RigidbodyConstraints.FreezeAll;
+                return;
+            }
+
+            _releaseVersion++;
+            IsTossed = true;
+            Tossed?.Invoke(this);
+            Body.constraints = RigidbodyConstraints.None;
+            Body.linearVelocity = velocity;
+            Grab.enabled = false;
+            GetComponent<SphereCollider>().enabled = false;
+            _note.gameObject.SetActive(false);
+            _tossedAt = Time.unscaledTime;
+            _tossStartScale = _orb != null ? _orb.localScale : Vector3.one;
+            _tossStarStartScale = _star != null ? _star.localScale : Vector3.one;
+        }
+
         private void FixedUpdate()
         {
             if (Body == null || Grab.isSelected || Body.isKinematic) return;
@@ -180,13 +219,22 @@ namespace Zap.Constellation
 
         private void LateUpdate()
         {
+            if (IsTossed)
+            {
+                float progress = Mathf.Clamp01((Time.unscaledTime - _tossedAt) / .5f);
+                if (_orb != null) _orb.localScale = Vector3.Lerp(_tossStartScale, Vector3.zero, progress);
+                if (_star != null) _star.localScale = Vector3.Lerp(_tossStarStartScale, Vector3.zero, progress);
+                if (progress >= 1f) Destroy(gameObject);
+                return;
+            }
             var camera = Camera.main;
             if (Data == null || camera == null) return;
             var theme = ZapTheme.Current;
             bool held = Grab.isSelected;
-            _scale = Mathf.MoveTowards(_scale, held ? .18f : _selected ? .165f : .15f, Time.unscaledDeltaTime*.09f);
+            float targetScale = (held ? .18f : (_selected || Highlighted) ? .165f : .15f) * (Highlighted ? HighlightScale : 1f);
+            _scale = Mathf.MoveTowards(_scale, targetScale, Time.unscaledDeltaTime*.09f);
             _orb.localScale = Vector3.one * _scale;
-            Crystal.SetEmphasis(held, _selected);
+            Crystal.SetEmphasis(held, _selected || Highlighted);
             var distance = Vector3.Distance(transform.position, camera.transform.position);
             if (distance < 2 && _previewImage != Data.image)
             { _previewImage = Data.image; Crystal.SetPreview(Data.image); }
@@ -215,14 +263,17 @@ namespace Zap.Constellation
         {
             _star.rotation = Quaternion.LookRotation(_star.position - cameraPosition);
             float size = theme.starCoreDiameter;
-            float coreScale = held ? theme.starGrabbedCoreScale : _selected ? theme.starPointedCoreScale : 1f;
-            float glowScale = held ? theme.starGrabbedGlowScale : _selected ? theme.starPointedGlowScale : 1f;
+            // A link-target preview looks pointed-at, and larger still.
+            bool pointed = _selected || Highlighted;
+            float highlight = Highlighted ? HighlightScale : 1f;
+            float coreScale = (held ? theme.starGrabbedCoreScale : pointed ? theme.starPointedCoreScale : 1f) * highlight;
+            float glowScale = (held ? theme.starGrabbedGlowScale : pointed ? theme.starPointedGlowScale : 1f) * highlight;
             ZapArt.SetDiameter(_core, size * coreScale);
             ZapArt.SetDiameter(_glow, size * theme.starGlowScale * glowScale);
             ZapArt.SetDiameter(_ring, size * theme.starRingScale);
             ZapArt.SetDiameter(_sparks, size * theme.starSparksScale);
             ZapArt.SetDiameter(_orbit, size * theme.starOrbitScale);
-            ZapArt.Show(_ring, _selected && !held);
+            ZapArt.Show(_ring, pointed && !held);
             ZapArt.Show(_sparks, held);
             ZapArt.Show(_orbit, !string.IsNullOrEmpty(Data.image));
             foreach (var layer in _layers)

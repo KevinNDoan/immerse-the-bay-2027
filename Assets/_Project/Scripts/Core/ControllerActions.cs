@@ -3,8 +3,9 @@ using UnityEngine.InputSystem;
 using UnityEngine.XR;
 using CommonUsages = UnityEngine.XR.CommonUsages;
 
-namespace Zap.Constellation
+namespace Zap.Core
 {
+    // Shared by the constellation (Zap.Constellation) and in-world steering (Zap.World).
     // XR device features work with the OpenXR controller profiles already in the project.
     public sealed class ControllerActions
     {

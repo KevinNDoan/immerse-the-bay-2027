@@ -18,6 +18,7 @@
     },
     {
       "id": "demo-great-wall-tower",
+      "textureProjection": "panorama",
       "topic": "Great Wall — Watchtower Interior",
       "parentIds": ["demo-great-wall-exterior"],
       "position": {"x": -0.95, "y": 1.05, "z": 2.7},

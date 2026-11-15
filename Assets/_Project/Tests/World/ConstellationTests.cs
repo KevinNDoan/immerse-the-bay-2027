@@ -28,6 +28,49 @@ namespace Zap.World.Tests
             CollectionAssert.AreEqual(new[]{wall},NodeContext.Parents(tower,nodes));
         }
 
+        [Test]
+        public void ActiveGeometryHeartbeatKeepsLongJourneyAliveButCannotReviveCancelledOrStalledTravel()
+        {
+            const BindingFlags flags=BindingFlags.Instance|BindingFlags.NonPublic;
+            var root=new GameObject("Long generation heartbeat test");
+            var controller=root.AddComponent<ConstellationController>(); controller.enabled=false;
+            var journey=root.AddComponent<WorldJourney>();
+            void Set(string name,object value) => typeof(ConstellationController).GetField(name,flags).SetValue(controller,value);
+            bool Expired() => (bool)typeof(ConstellationController).GetProperty("LoadingTimedOut",flags).GetValue(controller);
+            bool Heartbeat(PreparedWorld value,int version=7) => (bool)typeof(ConstellationController)
+                .GetMethod("AcceptPreparationHeartbeat",flags).Invoke(controller,new object[]{value,version});
+            var pending=new PreparedWorld {projection="geometry",state="preparing",cacheKey=new string('a',64)};
+            try
+            {
+                Set("_journey",journey); Set("_worldRequest",7); Set("_preparingWorld",true);
+                journey.Begin(Vector3.zero,Vector3.forward);
+                Set("_loadingStarted",Time.unscaledTime-2400);
+                Assert.IsTrue(Expired(),"A silent forty-minute request should time out.");
+                Assert.IsTrue(Heartbeat(pending));
+                Assert.IsFalse(Expired(),"An active export must keep hyperspace alive beyond four minutes.");
+                Assert.IsTrue(journey.IsActive,"A preparation heartbeat must not reveal the unfinished world.");
+
+                Set("_loadingStarted",Time.unscaledTime-241);
+                Assert.IsTrue(Expired(),"If heartbeats stop, the original timeout must still apply.");
+                foreach (var invalid in new[] {null,
+                    new PreparedWorld {projection="geometry",state="error",cacheKey=pending.cacheKey},
+                    new PreparedWorld {projection="geometry",state="ready",cacheKey=pending.cacheKey},
+                    new PreparedWorld {projection="panorama",state="preparing",cacheKey=pending.cacheKey},
+                    new PreparedWorld {projection="geometry",state="preparing",cacheKey="invalid"}})
+                {
+                    Assert.IsFalse(Heartbeat(invalid));
+                    Assert.IsTrue(Expired(),"Invalid or completed jobs cannot extend a pending journey.");
+                }
+                Assert.IsFalse(Heartbeat(pending,6)); Assert.IsTrue(Expired(),"A previous request cannot extend the current one.");
+                Set("_preparingWorld",false);
+                Assert.IsFalse(Heartbeat(pending)); Assert.IsTrue(Expired(),"A stalled live stream must retain its timeout.");
+                journey.Cancel();
+                Assert.IsFalse(Heartbeat(pending)); Assert.IsFalse(Expired());
+                Assert.IsFalse(journey.IsActive,"A late response must not restart a cancelled journey.");
+            }
+            finally { Object.Destroy(root); }
+        }
+
         [UnityTest]
         public IEnumerator ConnectedWorldOrbsAreReachableBothWaysAndRestoreMapPositions()
         {

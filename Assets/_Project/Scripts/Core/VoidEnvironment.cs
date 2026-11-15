@@ -63,14 +63,14 @@ namespace Zap.Core
             }
 
             mainCamera.clearFlags = CameraClearFlags.SolidColor;
-            mainCamera.backgroundColor = ZapColors.Void;
+            mainCamera.backgroundColor = ZapTheme.Current.voidColor;
         }
 
         static void ConfigureLighting()
         {
             RenderSettings.skybox = null;
             RenderSettings.ambientMode = AmbientMode.Flat;
-            RenderSettings.ambientLight = ZapColors.VoidLift;
+            RenderSettings.ambientLight = ZapTheme.Current.voidLift;
         }
 
         // Cheap temporary depth cues; replace this root when the skybox arrives.

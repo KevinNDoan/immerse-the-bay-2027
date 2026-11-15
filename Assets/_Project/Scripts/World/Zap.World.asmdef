@@ -2,6 +2,7 @@
     "name": "Zap.World",
     "rootNamespace": "Zap.World",
     "references": [
+        "Zap.Core",
         "Zap.Net",
         "Unity.InputSystem"
     ],

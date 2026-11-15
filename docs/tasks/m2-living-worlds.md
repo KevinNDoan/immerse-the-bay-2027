@@ -25,3 +25,5 @@ The owner further emphasized learning through interacting with and exploring the
 - Use freely licensed assets with provenance. Do not purchase assets or create/sign into accounts. Report remaining realism limitations honestly.
 - Generate all serialized Unity assets and metadata with Unity; do not hand-edit them. Do not change packages or shared ProjectSettings.
 - Build and install on the authorized headset when connected. No commits or pushes without a request.
+
+**2026-11-14 integration update:** The owner explicitly requested connected-world travel and resolving/merging `zap/build` into `main`. This authorizes the integration and necessary commits/push/PR merge, overriding the default no-main-merge rule for this request. All three funded demo worlds are complete; retain their saved assets and the spend lock.

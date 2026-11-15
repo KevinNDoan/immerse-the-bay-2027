@@ -8,6 +8,7 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.Networking;
 using UnityEngine.SceneManagement;
+using Zap.Core;
 using Zap.Net;
 using Zap.World;
 
@@ -39,6 +40,7 @@ namespace Zap.Constellation
             _branchSelection.gameObject.activeInHierarchy && (_branchSelection.Grab.isSelected || _branchSelection.Grab.isHovered)
                 ? _branchSelection : null;
         private float _loadingStarted;
+        private bool LoadingTimedOut => (_preparingWorld || Travelling) && Time.unscaledTime - _loadingStarted > 240;
         private bool InWorld => (_environment != null && _environment.IsVisible) || (_world != null && _world.IsEntered);
         private bool WorldReady => (_environment != null && _environment.IsVisible) || (_world != null && _world.State == "streaming");
         private bool Travelling => _journey != null && _journey.IsActive;
@@ -54,14 +56,15 @@ namespace Zap.Constellation
         private GameObject _voidStars;
         private VoiceRecorder _voice;
         private WorldSession _world;
+        private WorldControls _worldControls;
         private Transform _left, _right, _content, _branches;
-        private Material _material;
+        private Material _material, _lineMaterial;
         private TextMeshPro _hud;
         private TopicBall _voiceTarget, _worldNode, _lineStart;
         private string _voiceAction;
         private string _savePath;
         private string _typed = "Volcanoes";
-        private bool _busy, _recordButton, _trigger, _worldVisible, _pulling, _dirty;
+        private bool _busy, _recordButton, _trigger, _worldVisible, _pulling, _dirty, _lineTextured;
         private Vector3 _pullMidpoint;
         private float _pullDistance, _lastSave, _lastSteer, _recordStart;
         private uint _pendingSeq;
@@ -84,7 +87,12 @@ namespace Zap.Constellation
             _branches = new GameObject("Ideas created inside this world").transform;
             _branches.SetParent(transform, false);
             _material = new Material(Shader.Find("Zap/Solid"));
-            _material.SetColor("_BaseColor", Color.white);
+            _material.SetColor("_BaseColor", ZapTheme.Current.nodeColor);
+            var lineImage = ZapTheme.Current.lineImage;
+            _lineTextured = lineImage != null && ZapArt.Material != null;
+            _lineMaterial = _lineTextured ? new Material(ZapArt.Material) : new Material(Shader.Find("Zap/Solid"));
+            if (_lineTextured) _lineMaterial.SetTexture("_MainTex", lineImage);
+            _lineMaterial.SetColor("_BaseColor", ZapTheme.Current.lineColor);
             _voice = gameObject.AddComponent<VoiceRecorder>();
             _space = gameObject.AddComponent<StudyWorkspace>();
             _environment = gameObject.AddComponent<GeneratedEnvironment>();
@@ -96,6 +104,8 @@ namespace Zap.Constellation
             if (data.edges != null) _edges.AddRange(data.edges.Where(e => e != null));
             RebuildLines();
             while ((_world = FindAnyObjectByType<WorldSession>()) == null) yield return null;
+            _worldControls = _world.GetComponent<WorldControls>();
+            if (_worldControls != null) _worldControls.InputOwner = this;
             _world.OnStatus += WorldStatus;
             _world.OnError += e =>
             {
@@ -171,7 +181,7 @@ namespace Zap.Constellation
             _world.GetComponent<WorldAudio>()?.SetMuted(_voice.IsRecording || _voice.IsStarting);
             if (_input.ExitDown && !cancelled && (InWorld || _preparingWorld || Travelling)) LeaveWorld();
             if (_input.EnterDown && !InWorld && !_preparingWorld && Current != null && !_busy) EnterWorld(Current);
-            if ((_preparingWorld || Travelling) && Time.unscaledTime - _loadingStarted > 240)
+            if (LoadingTimedOut)
             { LeaveWorld(); SetStatus("This world is still preparing on the laptop. Re-enter to check its progress."); }
             if (_worldVisible && !InWorld && !_preparingWorld) ShowConstellation();
             foreach (var exhibit in _space.Objects)
@@ -479,6 +489,15 @@ namespace Zap.Constellation
             StartCoroutine(PrepareAndEnter(ball, prompt, ++_worldRequest));
         }
 
+        private bool AcceptPreparationHeartbeat(PreparedWorld prepared, int version)
+        {
+            if (!_preparingWorld || version != _worldRequest || prepared?.projection != "geometry" || prepared.state != "preparing" ||
+                string.IsNullOrEmpty(prepared.cacheKey) || !System.Text.RegularExpressions.Regex.IsMatch(prepared.cacheKey, @"^[a-f0-9]{64}$")) return false;
+            // A healthy generation/export may take much longer than four minutes. Time out silence, not an active job.
+            _loadingStarted = Time.unscaledTime;
+            return true;
+        }
+
         private IEnumerator PrepareAndEnter(TopicBall ball, string context, int version)
         {
             string response = null;
@@ -491,12 +510,11 @@ namespace Zap.Constellation
                 try { prepared = JsonUtility.FromJson<PreparedWorld>(response); }
                 catch (ArgumentException) { }
             }
-            while (prepared?.projection == "geometry" && prepared.state == "preparing")
+            while (AcceptPreparationHeartbeat(prepared, version))
             {
                 SetStatus(prepared.notice);
                 yield return new WaitForSeconds(3);
                 if (version != _worldRequest) yield break;
-                if (string.IsNullOrEmpty(prepared.cacheKey) || !System.Text.RegularExpressions.Regex.IsMatch(prepared.cacheKey, @"^[a-f0-9]{64}$")) break;
                 using var poll = UnityWebRequest.Get(RelayConfig.BaseUrl.TrimEnd('/') + "/world/jobs/" + prepared.cacheKey);
                 poll.timeout = 30; _preparationRequest = poll;
                 yield return poll.SendWebRequest();
@@ -744,16 +762,28 @@ namespace Zap.Constellation
             {
                 var obj = new GameObject("Connection"); obj.transform.SetParent(_content, false);
                 var line = obj.AddComponent<LineRenderer>();
-                line.sharedMaterial = _material; line.positionCount = 2; line.widthMultiplier = .0025f;
+                line.sharedMaterial = _lineMaterial; line.positionCount = 2;
+                // The line image repeats along the line instead of stretching.
+                if (_lineTextured) line.textureMode = LineTextureMode.Tile;
                 _lines.Add(line);
             }
         }
         private void UpdateLines()
         {
+            var theme = ZapTheme.Current;
+            _material.SetColor("_BaseColor", theme.nodeColor);
+            _lineMaterial.SetColor("_BaseColor", theme.lineColor);
+            float width = _lineTextured ? theme.lineImageWidth : theme.lineWidth;
+            // One repeat of the image is as long as its aspect ratio times the line width.
+            var tiling = Vector2.one;
+            if (_lineTextured && theme.lineImage != null && width > 0)
+                tiling.x = theme.lineImage.height / (theme.lineImage.width * width);
             for (int i = 0; i < _edges.Count; i++)
             {
                 var from = _balls.FirstOrDefault(b => b.Data.id == _edges[i].from);
                 var to = _balls.FirstOrDefault(b => b.Data.id == _edges[i].to);
+                _lines[i].widthMultiplier = width;
+                if (_lineTextured) _lines[i].textureScale = tiling;
                 _lines[i].enabled = from && to;
                 if (from && to) { _lines[i].SetPosition(0, from.transform.position); _lines[i].SetPosition(1, to.transform.position); }
             }
@@ -767,21 +797,26 @@ namespace Zap.Constellation
         private void BuildHud()
         {
             var obj = new GameObject("ZAP controls"); obj.transform.SetParent(transform, false);
-            _hud = obj.AddComponent<TextMeshPro>(); _hud.fontSize = .35f; _hud.richText = false;
-            _hud.enableAutoSizing = true; _hud.fontSizeMin = .22f; _hud.fontSizeMax = .35f;
+            _hud = obj.AddComponent<TextMeshPro>(); _hud.richText = false;
+            _hud.enableAutoSizing = true;
             _hud.overflowMode = TextOverflowModes.Ellipsis;
-            _hud.rectTransform.sizeDelta = new Vector2(.5f, .32f);
             if (Camera.main) obj.transform.position = Camera.main.transform.position + Camera.main.transform.forward * 1.1f + Vector3.down * .25f;
         }
         private void UpdateHud()
         {
             if (_hud == null || Camera.main == null) return;
+            var theme = ZapTheme.Current;
+            _hud.rectTransform.sizeDelta = theme.controlsCardSize;
+            _hud.fontSizeMin = theme.controlsTextSizeMin;
+            _hud.fontSizeMax = theme.controlsTextSizeMax;
+            _hud.color = theme.textColor;
+            if (theme.font != null) _hud.font = theme.font;
             if (_left != null)
             {
                 Vector3 offset = _left.position + Vector3.up * .13f + _left.forward * .18f - Camera.main.transform.position;
                 // Keep the wrist card readable when the controller comes near the face.
                 if (offset.sqrMagnitude < .01f) offset = Camera.main.transform.forward;
-                _hud.transform.position = Camera.main.transform.position + offset.normalized * Mathf.Max(.6f, offset.magnitude);
+                _hud.transform.position = Camera.main.transform.position + offset.normalized * Mathf.Max(theme.controlsMinDistanceFromFace, offset.magnitude);
             }
             _hud.transform.rotation = Quaternion.LookRotation(_hud.transform.position - Camera.main.transform.position);
             string title = _worldVisible ? _worldNode?.Data.topic : (Current != null ? Current.Data.topic : "ZAP!");
@@ -814,7 +849,12 @@ namespace Zap.Constellation
         }
         private void OnApplicationPause(bool paused) { if (paused) { if (_world != null && (InWorld || _preparingWorld)) LeaveWorld(); Save(); } }
         private void OnApplicationQuit() { Save(); }
-        private void OnDestroy() { if (_material) Destroy(_material); }
+        private void OnDestroy()
+        {
+            if (_worldControls != null && _worldControls.InputOwner == this) _worldControls.InputOwner = null;
+            if (_material) Destroy(_material);
+            if (_lineMaterial) Destroy(_lineMaterial);
+        }
 
         private void OnGUI()
         {

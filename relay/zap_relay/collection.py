@@ -61,7 +61,7 @@ class WorldCollection:
     def prepare(self, payload, spatial):
         world = self.entry(payload.get("nodeId"))
         if world is None:
-            return {"state": "error", "projection": "geometry", "notice": "This idea has no prepared world in the demo. Choose a ready demo idea."}
+            return {"state": "error", "projection": "geometry", "notice": "New world generation is turned off in this demo to protect your credits. This idea is saved, but its environment has not been generated."}
         if not world.get("cacheKey"):
             return {"state": "error", "projection": "geometry", "notice": "This demo world is awaiting generation. No credits were spent by opening it."}
         result = spatial.status(world["cacheKey"])

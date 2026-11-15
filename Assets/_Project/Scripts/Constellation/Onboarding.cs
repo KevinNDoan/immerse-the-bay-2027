@@ -34,7 +34,7 @@ namespace Zap.Constellation
         private static readonly string[] Instructions =
         {
             "Hold A and say a topic, like 'volcanoes'. Let go when you're done.",
-            "Squeeze the grip to pick it up. Let go gently to place it. Throw forward to enter its world.",
+            "Squeeze the grip to pick it up. Let go or throw to place it in your map. Press X to enter its world.",
             "Say another topic. To link or unlink two, tap them together.",
             "Aim at a topic and press X to step inside. Press Y to come back."
         };
@@ -59,8 +59,8 @@ namespace Zap.Constellation
         {
             new ControlHint(ControlId.RightA, "Hold: new topic"),
             new ControlHint(ControlId.RightB, "Hold: change topic"),
-            new ControlHint(ControlId.RightGrip, "Grab · throw to travel"),
-            new ControlHint(ControlId.LeftGrip, "Grab · throw to travel"),
+            new ControlHint(ControlId.RightGrip, "Grab · throw to place"),
+            new ControlHint(ControlId.LeftGrip, "Grab · throw to place"),
             new ControlHint(ControlId.RightTrigger, "Aim and drag: link"),
             new ControlHint(ControlId.LeftX, "Step inside"),
             new ControlHint(ControlId.LeftY, "Delete selected idea…"),

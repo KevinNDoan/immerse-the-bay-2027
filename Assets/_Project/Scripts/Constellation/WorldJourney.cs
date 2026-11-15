@@ -18,7 +18,7 @@ namespace Zap.Constellation
         private float _started, _readyAt = -1;
         private Vector3 _flight;
         private AudioSource _sound;
-        private AudioClip _launchSound;
+        private AudioClip _launchSound, _impactSound;
 
         private void Awake()
         {
@@ -78,7 +78,9 @@ namespace Zap.Constellation
             _started = Time.unscaledTime; _readyAt = -1; IsActive = true;
             _tunnel.SetActive(true); _burst.SetActive(true);
             _sound.transform.position = origin;
+            _sound.Stop();
             _sound.Play();
+            if (_impactSound != null) _sound.PlayOneShot(_impactSound, 1.4f);
             RenderAt(0, 0);
         }
 
@@ -97,6 +99,7 @@ namespace Zap.Constellation
 
         private void BuildSound()
         {
+            _impactSound = Resources.Load<AudioClip>("ZapOrbImpact");
             const int rate = 24000;
             var samples = new float[rate];
             uint random = 2137;

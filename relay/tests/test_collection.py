@@ -59,3 +59,48 @@ def test_collection_routes_node_ids_to_distinct_worlds_and_never_generates(tmp_p
         assert len(seed['nodes'])==2
         assert seed['edges']==[{'from':'demo-great-wall-exterior','to':'demo-great-wall-tower'}]
         assert not spatial.tasks
+
+
+def test_enabled_generation_routes_new_nodes_and_preserves_prepared_worlds(tmp_path):
+    import asyncio
+    from zap_relay.spatial import SpatialPreparation
+
+    class Api:
+        calls = []
+        async def request(self, method, path):
+            self.calls.append((method, path))
+            assert (method, path) == ('GET', '/credits')
+            return {'remaining_credits': 1920}
+        def __getattr__(self, name):
+            raise AssertionError('Insufficient funds must not start paid operation: ' + name)
+
+    async def check():
+        settings = Settings('standin', '', 'model', 8794, worldlabs_key='test-only', world_generation_enabled=True)
+        service = SpatialPreparation(settings, None, tmp_path/'cache', Api())
+        spec = json.loads(Path('demo/great-wall-biology.json').read_text())
+        key = 'a'*64
+        spec['worlds'][0]['cacheKey'] = key
+        folder = service._folder(key); (folder/'assets').mkdir(parents=True)
+        (folder/'status.json').write_text(json.dumps({'state':'ready','environment':{}}))
+        (folder/'assets/visual-0.mesh').write_bytes(b'cached')
+        catalog = tmp_path/'catalog.json'; catalog.write_text(json.dumps(spec))
+        service.collection = WorldCollection(catalog)
+        ready = await service.prepare({'nodeId':spec['worlds'][0]['id']})
+        assert ready['state'] == 'ready' and not service.api.calls
+        result = await service.prepare({'nodeId':'new-idea','topic':'New idea','context':'Optional parent context'})
+        assert result['state'] == 'preparing'
+        await asyncio.gather(*list(service.tasks.values()))
+        error = service.status(result['cacheKey'])
+        assert error['state'] == 'error' and '5,080' in error['notice']
+        assert service.api.calls == [('GET', '/credits')]
+        assert service._node_worlds()['new-idea'] == result['cacheKey']
+        generated = service._folder(result['cacheKey'])
+        (generated/'assets').mkdir(); (generated/'assets/visual-0.mesh').write_bytes(b'new')
+        (generated/'status.json').write_text(json.dumps({'state':'ready','environment':{}}))
+        Image.new('RGB',(32,16),'green').save(generated/'pano.png')
+        assert service.asset(result['cacheKey'],'visual-0.mesh').read_bytes() == b'new'
+        assert service.preview('new-idea')['image']
+        assert (await service.prepare({'nodeId':'new-idea','topic':'New idea','context':'Optional parent context'}))['state'] == 'ready'
+        assert len(service.api.calls) == 1
+        await service.close()
+    asyncio.run(check())

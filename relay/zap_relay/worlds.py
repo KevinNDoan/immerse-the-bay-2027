@@ -17,6 +17,7 @@ import httpx
 from PIL import Image
 
 from .nodes import _text
+from .object_actions import ACTION_INSTRUCTIONS, REPLY_SCHEMA, validate_reply
 
 CACHE_VERSION = "orbis-surround-v2"
 PANORAMA_STYLE = (
@@ -149,15 +150,19 @@ class WorldPreparation:
         except (ValueError, TypeError, KeyError):
             raise RuntimeError("Study model was invalid. Your current model has been kept.") from None
 
-    async def explore(self, topic, context, instruction, current=None, focused="", objects=None, state=None):
+    async def explore(self, topic, context, instruction, current=None, focused="", objects=None, state=None,
+                      scene_objects=None, selected_id=""):
         if not self.settings.openai_key:
             raise RuntimeError("OpenAI is not configured. Existing objects still work offline.")
         schema = obj({"action": {"type": "string", "enum": ["add", "revise", "answer"]},
                       "answer": {"type": "string"}, "model": {"anyOf": [PLAN_SCHEMA, {"type": "null"}]}})
         instructions = PLAN_INSTRUCTIONS + """
 You are the guide in this exploration space. Choose action from the user's intent:
+You can create and edit the floating objects by returning the corresponding action.
+Polite requests such as 'can you create' or 'could you change' ask you to perform that action.
 add for wishing a new object into existence or comparing another representation; keep other objects.
 revise for an explicit change to the selected object; preserve its identity and relevant structure.
+An explicit request to replace the selected object with another is a revise with the new model.
 answer for a question about the object/part or what just happened, without rebuilding geometry.
 Some worlds deliberately have no learning object. When selectedObject is null, answer questions
 about the world, its subject or its surroundings on the reading pane. Do not invent an object to
@@ -171,6 +176,11 @@ Never treat an ordinary question as permission to replace an object. No environm
 """
         payload = {"topic": topic, "context": context, "request": instruction, "selectedObject": current,
                    "focusedPart": focused, "objectsInSpace": objects or [], "currentExplorationState": state or {}}
+        if scene_objects is not None:
+            schema = REPLY_SCHEMA
+            instructions = PLAN_INSTRUCTIONS + ACTION_INSTRUCTIONS
+            payload["objectsInSpace"] = scene_objects
+            payload["selectedObjectId"] = selected_id
         async with httpx.AsyncClient(timeout=90) as client:
             response = await client.post("https://api.openai.com/v1/responses",
                 headers={"Authorization": "Bearer " + self.settings.openai_key},
@@ -187,6 +197,8 @@ Never treat an ordinary question as permission to replace an object. No environm
                       if part.get("type") == "output_text")
         try:
             reply = json.loads(raw)
+            if scene_objects is not None:
+                return validate_reply(reply, scene_objects)
             action = reply["action"]
             if action not in ("add", "revise", "answer"): raise ValueError()
             model = None if action == "answer" else validate_plan(reply["model"])

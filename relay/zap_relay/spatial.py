@@ -43,7 +43,7 @@ class SpatialPreparation:
         return self.root / key
 
     def status(self, key):
-        if self.collection is not None and not self.collection.contains_key(key): raise FileNotFoundError("World is not in this demo.")
+        if self.collection is not None and not self.settings.world_generation_enabled and not self.collection.contains_key(key): raise FileNotFoundError("World is not in this demo.")
         folder = self._folder(key)
         if not (folder / "status.json").exists(): raise FileNotFoundError("World job not found.")
         result = json.loads((folder / "status.json").read_text())
@@ -74,11 +74,18 @@ class SpatialPreparation:
         return plan, pane
 
     async def prepare(self, payload):
-        if self.collection is not None: return self.collection.prepare(payload, self)
+        if self.collection is not None and (self.collection.entry(payload.get("nodeId")) is not None
+                or not self.settings.world_generation_enabled):
+            return self.collection.prepare(payload, self)
         topic = _text(payload.get("topic"), 160)
         context = _text(payload.get("context", topic), 8000)
         if not topic or not context: raise ValueError("A topic and its context are required.")
         key = self.key(context); folder = self._folder(key)
+        node_id = _text(payload.get("nodeId", ""), 160, required=False)
+        if node_id:
+            links = self._node_worlds(); links[node_id] = key
+            self.root.mkdir(parents=True, exist_ok=True)
+            self._save(self.root, "node-worlds.json", links)
         folder.mkdir(parents=True, exist_ok=True)
         if (folder / "status.json").exists() and self.status(key)["state"] == "ready":
             return self.status(key)
@@ -196,19 +203,26 @@ class SpatialPreparation:
         return self.status(key)
 
     def asset(self, key, filename):
-        if self.collection is not None and not self.collection.contains_key(key): raise FileNotFoundError("World is not in this demo.")
+        if self.collection is not None and not self.settings.world_generation_enabled and not self.collection.contains_key(key): raise FileNotFoundError("World is not in this demo.")
         if not re.fullmatch(r"(?:visual|collision)-[0-9]+\.(?:mesh|jpg)|panorama\.jpg", filename):
             raise ValueError("Invalid world asset.")
         path = self._folder(key) / "assets" / filename
         if not path.is_file(): raise FileNotFoundError("World asset not found.")
         return path
 
+    def _node_worlds(self):
+        try:
+            value = json.loads((self.root / "node-worlds.json").read_text())
+            return value if isinstance(value, dict) else {}
+        except (OSError, ValueError): return {}
+
     def preview(self, node_id=""):
         """Read the existing world's panorama only. Never start a provider operation."""
         if self.collection is not None:
             entry = self.collection.entry(node_id)
-            if not entry or not entry.get("cacheKey"): return {"image": ""}
-            folder = self._folder(entry["cacheKey"])
+            key = entry.get("cacheKey") if entry else self._node_worlds().get(node_id)
+            if not key: return {"image": ""}
+            folder = self._folder(key)
         else:
             if not self.settings.world_test_world_id: return {"image": ""}
             folder = self._folder(self.pinned_key)

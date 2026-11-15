@@ -17,7 +17,7 @@ namespace Zap.Constellation
 
         public void Enter(Zap.World.GeneratedEnvironment environment = null)
         {
-            if (_active) return;
+            if (_active) { _environment = environment; _velocity = Vector3.zero; return; }
             _rig = GameObject.Find("XR Origin (XR Rig)")?.transform;
             if (_rig == null || Camera.main == null) return;
             _savedPosition = _rig.position; _savedRotation = _rig.rotation;

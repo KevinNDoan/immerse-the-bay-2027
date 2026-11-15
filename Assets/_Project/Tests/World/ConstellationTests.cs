@@ -514,9 +514,28 @@ namespace Zap.World.Tests
             var obj = new GameObject("Test constellation controller");
             try
             {
-                obj.AddComponent<ConstellationController>();
+                var entry = ConstellationLibrary.Create("Startup regression");
+                NodeStore.Save(entry.path, new ConstellationData
+                {
+                    nodes = new[]
+                    {
+                        new NodeData { id = "one", topic = "First world", position = new Vector3(-.5f, 1.4f, 2) },
+                        new NodeData { id = "two", topic = "Child world", parentIds = new[] { "one" }, position = new Vector3(.5f, 1.4f, 2) }
+                    },
+                    edges = new[] { new NodeEdge { from = "one", to = "two" } }
+                });
+                ConstellationLibrary.LastOpenedId = entry.id;
+                LogAssert.Expect(LogType.Log, "[Constellation] Loaded 2 nodes and 1 links.");
+                var controller = obj.AddComponent<ConstellationController>();
                 yield return null;
                 yield return null;
+                Assert.AreEqual(2, controller.Balls.Count, "Startup must recreate every saved world orb.");
+                foreach (var ball in controller.Balls)
+                {
+                    Assert.IsInstanceOf<TravelGrabInteractable>(ball.Grab);
+                    Assert.IsNotNull(ball.Crystal);
+                    Assert.IsTrue(ball.gameObject.activeInHierarchy);
+                }
                 Object.Destroy(obj);
                 yield return null;
                 LogAssert.NoUnexpectedReceived();

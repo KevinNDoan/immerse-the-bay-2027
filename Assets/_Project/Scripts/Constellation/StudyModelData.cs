@@ -46,6 +46,13 @@ namespace Zap.Constellation
     {
         public string action, answer;
         public StudyModelData model;
+        public StudyObjectAction[] actions;
+    }
+    [Serializable] public class StudyObjectData { public string id; public StudyModelData model; }
+    [Serializable] public class StudyObjectAction
+    {
+        public string action, targetId;
+        public StudyModelData model;
     }
     [Serializable] public class PreparedWorld
     {

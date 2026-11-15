@@ -47,7 +47,10 @@ namespace Zap.Constellation
         private StudyExhibit _stickStudy;
         private GeneratedEnvironment _environment;
         private WorldJourney _journey;
-        private TopicBall _branchSelection;
+        private TopicBall _branchSelection, _departureNode;
+        private string _departureContext;
+        private GeneratedEnvironment _arrivingEnvironment;
+        private string _preparationError;
         // X follows the orb the user is actually pointing at or holding, not a stale hover.
         private TopicBall LinkedTravelTarget => _branchSelection != null && _branchPositions.ContainsKey(_branchSelection) &&
             _branchSelection.gameObject.activeInHierarchy && (_branchSelection.Grab.isSelected || _branchSelection.Grab.isHovered)
@@ -93,7 +96,7 @@ namespace Zap.Constellation
         private const float CutRange = 4f;
         private const string TutorialHint = "Hold the left stick to skip the tutorial";
         private const string WorldHint = "Left trigger: ask / create · A: new idea\nGrip: object / pane · B: edit · Y: map";
-        private const string VoidHint = "Point at an orb + Y: delete…\nGrip + throw or X: enter · A: new idea";
+        private const string VoidHint = "Point at an orb + Y: delete…\nThrow: place · X: enter · A: new idea";
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Install()
@@ -183,6 +186,8 @@ namespace Zap.Constellation
             bool voiceHeld = _input.CreateHeld || _input.EditHeld || _input.AskHeld;
             // Cancel wins even when Y and the voice-button release arrive in the same frame.
             bool cancelled = _input.ExitDown && CancelPendingVoice();
+            if (_input.ExitDown && _preparingWorld && _departureNode != null)
+            { RecoverJourney("Travel cancelled. Your new idea is saved in the map."); cancelled = true; }
             if (!voiceHeld) _releaseBeforeVoice = false;
             if (voiceHeld && !_recordButton && !_releaseBeforeVoice && !_input.ExitDown && !_busy && !Travelling)
             {
@@ -223,7 +228,7 @@ namespace Zap.Constellation
             if (_input.ExitDown && !cancelled && (InWorld || _preparingWorld || Travelling)) LeaveWorld();
             if (_input.EnterDown && !InWorld && !_preparingWorld && Current != null && !_busy) EnterWorld(Current);
             if (LoadingTimedOut)
-            { LeaveWorld(); SetStatus("This world is still preparing on the laptop. Re-enter to check its progress."); }
+            { RecoverJourney("This world is still preparing on the laptop. Try entering the saved idea again to check its progress."); }
             if (_worldVisible && !InWorld && !_preparingWorld) ShowConstellation();
             foreach (var exhibit in _space.Objects)
             {
@@ -270,7 +275,7 @@ namespace Zap.Constellation
             if (draft != null) { ball.SetData(data); ball.SetDraft(false); }
             else ball.Initialize(data, _material);
             ball.Selected += Select;
-            ball.EnterRequested += EnterWorld;
+            ball.EnterRequested += HandleOrbThrow;
             ball.Grabbed += RequestPreview;
             ball.Tossed += RemoveFromModel;
             _balls.Add(ball);
@@ -477,7 +482,7 @@ namespace Zap.Constellation
                     InvalidateChangedPreviews();
                     RequestPreview(target);
                     Save();
-                    SetStatus(action == "edit" ? "Updated " + data.topic : data.topic + (ZapPlatform.IsDesktop ? " is ready. Drag to move; double-click to enter." : " is ready. Grip to grab; throw to travel."));
+                    SetStatus(action == "edit" ? "Updated " + data.topic : data.topic + (ZapPlatform.IsDesktop ? " is ready. Drag to move; double-click to enter." : InWorld ? " is ready. Grip and throw to open its world." : " is saved. Throw to place; point + X to open its world."));
                     if (action == "edit" && InWorld && target == _worldNode)
                     {
                         _worldContext = NodeContext.WorldPrompt(data, _balls.Select(b => b.Data));
@@ -609,8 +614,19 @@ namespace Zap.Constellation
                 string detail = null;
                 try { detail = JsonUtility.FromJson<ApiError>(request.downloadHandler.text)?.detail; } catch (ArgumentException) { }
                 detail = string.IsNullOrEmpty(detail) ? "Cannot reach the laptop. Check its relay connection, then try again." : detail;
+                if (endpoint == "/world/prepare") _preparationError = detail;
                 if (operation >= 0) OperationError(detail); else SetStatus(detail);
             }
+        }
+
+        private void HandleOrbThrow(TopicBall ball)
+        {
+            if (InWorld) { EnterWorld(ball); return; }
+            if (WorldActive || PendingDeletion != null || ball == null) return;
+            // Home throws arrange ideas; only an explicit entry starts generation here.
+            ball.Release(Vector3.zero);
+            Select(ball); _dirty = true; Save();
+            SetStatus("Idea placed. Explore its suggestions, or point + X to open its world.");
         }
 
         public void EnterWorld(TopicBall ball)
@@ -624,19 +640,16 @@ namespace Zap.Constellation
             { ball.Data.image = ""; ball.Refresh(); }
             Vector3 origin = ball.transform.position;
             Vector3 direction = ball.LastThrowVelocity.sqrMagnitude > .01f ? ball.LastThrowVelocity.normalized : Camera.main.transform.forward;
-            Vector3 fromHead = origin - Camera.main.transform.position;
             ball.Body.linearVelocity = Vector3.zero; ball.Body.angularVelocity = Vector3.zero;
             Texture preview = ball.Crystal.PreviewTexture;
-            if (InWorld)
-            {
-                // Leaving restores the map rig's position AND yaw. Preserve the throw relative to the viewer.
-                var head = Camera.main.transform;
-                var localOrigin = head.InverseTransformVector(fromHead);
-                var localDirection = head.InverseTransformDirection(direction);
-                LeaveWorld();
-                origin = head.position + head.TransformVector(localOrigin);
-                direction = head.TransformDirection(localDirection);
-            }
+            // Keep the departure world and tracked pose alive until the destination is ready.
+            // Calling LeaveWorld here used to expose the map and destroy the recovery path.
+            _departureNode = InWorld ? _worldNode : null;
+            _departureContext = _worldContext;
+            _preparationError = null;
+            _space.Save();
+            foreach (var exhibit in _space.Objects) exhibit.gameObject.SetActive(false);
+            _branches.gameObject.SetActive(false);
             _journey.Begin(origin, direction, preview);
             _worldNode = ball;
             _branchSelection = null;
@@ -693,17 +706,28 @@ namespace Zap.Constellation
             }
             if (prepared == null || prepared.state == "error")
             {
-                string error = prepared?.notice ?? "World preparation could not finish. Re-enter to resume.";
-                ShowConstellation(); SetStatus(error); yield break;
+                string error = prepared?.notice ?? _preparationError ?? "World preparation could not finish. Try entering the saved idea again.";
+                RecoverJourney(error); yield break;
             }
             if (prepared.projection == "geometry")
             {
                 string error = null;
-                _world.GetComponent<DomeView>().SetVisible(false);
-                yield return _environment.Load(prepared.environment, RelayConfig.BaseUrl, SetStatus, failure => error = failure, prepared.HasArtifact);
+                // Stage into a separate component: a bad download must not destroy the current room.
+                var arriving = new GameObject("Arriving world").AddComponent<GeneratedEnvironment>();
+                arriving.transform.SetParent(transform, false);
+                _arrivingEnvironment = arriving;
+                yield return arriving.Load(prepared.environment, RelayConfig.BaseUrl, SetStatus, failure => error = failure, prepared.HasArtifact);
                 if (version != _worldRequest) yield break;
-                if (error != null) { ShowConstellation(); SetStatus(error); yield break; }
+                if (error != null) { RecoverJourney(error); yield break; }
+                // A cached destination can arrive immediately; allow the shatter and cover to finish.
+                while (_journey.Elapsed < 1.0f && version == _worldRequest) yield return null;
+                if (version != _worldRequest) yield break;
+                _world.Exit();
+                _environment.Clear();
+                if (_environment.gameObject == gameObject) Destroy(_environment); else Destroy(_environment.gameObject);
+                _environment = arriving; _arrivingEnvironment = null;
                 _navigation.Enter(_environment);
+                CommitJourney();
                 _space.Open(ball.Data.id, prepared.HasArtifact ? prepared.plan : null, prepared.pane);
                 ShowLinkedWorlds();
                 _preparingWorld = false; _busy = false;
@@ -711,6 +735,8 @@ namespace Zap.Constellation
                 SetStatus("Your exploration space is ready. Grip to inspect; hold left trigger to ask or create an object.");
                 yield break;
             }
+            _environment.Clear();
+            CommitJourney();
             _space.Open(ball.Data.id, prepared?.HasArtifact == true ? prepared.plan : null, prepared?.pane);
             ShowLinkedWorlds();
             string image = !string.IsNullOrEmpty(ball.Data.image) ? ball.Data.image : prepared?.image ?? "";
@@ -719,6 +745,46 @@ namespace Zap.Constellation
             _world.Enter(ball.Data.id, ball.Data.topic, context, image);
             _preparingWorld = false; _busy = false;
             SetStatus(string.IsNullOrEmpty(prepared?.notice) ? "Surroundings ready. Connecting the live world…" : prepared.notice);
+        }
+
+        private void CommitJourney()
+        {
+            RestoreBranchesToMap();
+            _departureNode = null; _departureContext = null;
+            _branches.gameObject.SetActive(true);
+        }
+
+        private void RecoverJourney(string error)
+        {
+            _worldRequest++; _preparingWorld = false; _busy = false;
+            _preparationRequest?.Abort(); _preparationRequest = null;
+            if (_arrivingEnvironment != null)
+            { _arrivingEnvironment.Clear(); Destroy(_arrivingEnvironment.gameObject); _arrivingEnvironment = null; }
+            if (_departureNode != null && InWorld)
+            {
+                _worldNode = _departureNode; _worldContext = _departureContext;
+                _departureNode = null; _departureContext = null;
+                _branches.gameObject.SetActive(true);
+                foreach (var exhibit in _space.Objects) exhibit.gameObject.SetActive(true);
+                _journey.MarkReady(); // Fade back into the same room, never the map.
+                _study?.RequestFeedback("WORLD NOT OPENED", error + " Your idea is saved in the map.", false, true);
+            }
+            else ShowConstellation();
+            SetStatus(error);
+            Save();
+        }
+
+        private void RestoreBranchesToMap()
+        {
+            foreach (var branch in _branchPositions)
+            {
+                if (branch.Key == null) continue;
+                branch.Key.transform.SetParent(_content, true);
+                branch.Key.transform.position = branch.Value;
+                branch.Key.Body.linearVelocity = Vector3.zero; branch.Key.Body.angularVelocity = Vector3.zero;
+                branch.Key.SetWorldTravelHint(false);
+            }
+            _branchPositions.Clear(); _branchSelection = null;
         }
 
         private void ShowLinkedWorlds()
@@ -747,6 +813,7 @@ namespace Zap.Constellation
             return new StudyRequest { topic = _worldNode.Data.topic, context = _worldContext,
                 current = target != null && target.HasModel ? target.Data : null, focused = target?.FocusedName ?? "",
                 step = target?.StepIndex ?? -1, parameter = target?.Parameter ?? 0,
+                objectActions = true, objectStates = _space.CaptureObjects(), selectedId = target != null && target.HasModel ? target.ObjectId : "",
                 objects = _space.Objects.Where(item => item.HasModel).Select(item => item.Data.title).ToArray() };
         }
         private IEnumerator UpdateStudy(string instruction, int version, int operation, StudyExhibit target = null, StudyRequest request = null)
@@ -769,7 +836,7 @@ namespace Zap.Constellation
             try { reply = JsonUtility.FromJson<StudyReply>(response); } catch (ArgumentException) { }
             if (!_space.ApplyReply(reply, target))
             { OperationError("That response could not be applied. Your existing objects are kept."); yield break; }
-            SetStatus(reply.action == "add" ? "Object added. See its pane." : reply.action == "revise" ? "Object updated. See its pane." : "Answer ready on the pane.");
+            SetStatus(reply.action == "apply" ? "Objects updated. See the pane." : reply.action == "add" ? "Object added. See its pane." : reply.action == "revise" ? "Object updated. See its pane." : "Answer ready on the pane.");
             _space.Save();
         }
 
@@ -807,15 +874,11 @@ namespace Zap.Constellation
             CancelDraft();
             _environment.Clear();
             _journey.Cancel();
-            foreach (var branch in _branchPositions)
-            {
-                if (branch.Key == null) continue;
-                branch.Key.transform.SetParent(_content, true);
-                branch.Key.transform.position = branch.Value;
-                branch.Key.Body.linearVelocity = Vector3.zero; branch.Key.Body.angularVelocity = Vector3.zero;
-                branch.Key.SetWorldTravelHint(false);
-            }
-            _branchPositions.Clear(); _branchSelection = null;
+            RestoreBranchesToMap();
+            _branches.gameObject.SetActive(true);
+            _departureNode = null; _departureContext = null;
+            if (_arrivingEnvironment != null)
+            { _arrivingEnvironment.Clear(); Destroy(_arrivingEnvironment.gameObject); _arrivingEnvironment = null; }
             if (_voidStars != null) _voidStars.SetActive(true);
             _worldVisible = false; _pendingInstruction = null;
             HomeFrame.Hold = false;
@@ -864,13 +927,13 @@ namespace Zap.Constellation
         private void PromptReceived(string text, uint sequence) { if (_pendingInstruction != null) _pendingSeq = sequence; }
         private void FrameReceived(uint sequence)
         {
-            if (_world.IsEntered && _journey.IsActive) _journey.MarkReady();
+            if (!_preparingWorld && _world.IsEntered && _journey.IsActive) _journey.MarkReady();
             if (_pendingInstruction != null && sequence >= _pendingSeq)
             { SetStatus("Instruction sent. The live world is responding."); _pendingInstruction = null; }
         }
         private void WorldStatus(StatusMessage status)
         {
-            if (_environment != null && _environment.IsVisible) return;
+            if (_preparingWorld || (_environment != null && _environment.IsVisible)) return;
             if (status.state == "error") SetStatus(status.detail);
             else if (status.state == "streaming") SetStatus("Look all around. A: new idea · Left trigger: ask · Y: map.");
             else if (!string.IsNullOrEmpty(status.detail)) SetStatus(status.detail);
@@ -1114,6 +1177,7 @@ namespace Zap.Constellation
                 if (node != null && !string.IsNullOrWhiteSpace(node.topic)) CreateBall(node, node.position);
             if (data.edges != null) _edges.AddRange(data.edges.Where(edge => edge != null));
             RebuildLines();
+            Debug.Log($"[Constellation] Loaded {_balls.Count} nodes and {_edges.Count} links.");
             _dirty = false;
         }
         private void ClearConstellation()
@@ -1150,6 +1214,7 @@ namespace Zap.Constellation
                 hint = (LinkedTravelTarget != null ? "X: enter " + LinkedTravelTarget.Data.topic : "Point + X: linked world · Grip + throw: travel")
                     + "\nLeft trigger: ask / create · A: new idea · Y: map";
             if (CanCancelVoice) hint = IsListening ? "Y: cancel · Release voice button to send\nYou can keep moving and looking around." : "Y: cancel this request\nYou can keep moving and looking around.";
+            if (_preparingWorld && _departureNode != null) hint = "Opening your next world…\nY: cancel and stay here";
             string status = Status + (Travelling ? "\n" + Mathf.FloorToInt(_journey.Elapsed) + "s elapsed · Y returns" : "");
             _card.Show(title, tutorial ? _onboarding.Text : null, status, hint, _voice.IsRecording, _voice.Level, _busy, WorldActive, _left);
         }
@@ -1235,6 +1300,6 @@ namespace Zap.Constellation
         [Serializable] private class NodeRequest { public string action; public string text; public NodeData node; public ParentNote[] parents; }
         [Serializable] private class NodeResult { public string topic; public string summary; public string worldPrompt; public string[] suggestions; public string mode; }
         [Serializable] private class PrepareRequest { public string nodeId; public string topic; public string context; }
-        [Serializable] private class StudyRequest { public string topic; public string context; public string instruction; public StudyModelData current; public string focused; public string[] objects; public int step; public float parameter; }
+        [Serializable] private class StudyRequest { public string topic; public string context; public string instruction; public StudyModelData current; public string focused; public string[] objects; public int step; public float parameter; public bool objectActions; public StudyObjectData[] objectStates; public string selectedId; }
     }
 }

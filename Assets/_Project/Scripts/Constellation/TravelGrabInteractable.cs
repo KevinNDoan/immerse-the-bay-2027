@@ -5,6 +5,7 @@ using UnityEngine.XR.Interaction.Toolkit.Interactables;
 namespace Zap.Constellation
 {
     // Read the final smoothed throw before the next physics step can hit an environment mesh.
+    [UnityEngine.Scripting.Preserve]
     public sealed class TravelGrabInteractable : XRGrabInteractable
     {
         public event Action<Vector3> Detached;

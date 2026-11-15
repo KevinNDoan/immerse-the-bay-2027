@@ -6,7 +6,7 @@ using UnityEngine;
 namespace Zap.Constellation
 {
     // One persistent collection per idea; generating another object never rebuilds the room.
-    public sealed class StudyWorkspace : MonoBehaviour
+    public sealed partial class StudyWorkspace : MonoBehaviour
     {
         public StudyExhibit Current { get; private set; }
         public IReadOnlyList<StudyExhibit> Objects => _objects;
@@ -18,6 +18,7 @@ namespace Zap.Constellation
         private float _lastSave;
         [Serializable] private class SavedObject
         {
+            public string id;
             public StudyModelData model;
             public Vector3 position, rotation, scale;
             public int step;
@@ -54,6 +55,8 @@ namespace Zap.Constellation
                 {
                     var exhibit = Add(item.model, false);
                     if (exhibit?.Pose == null) continue;
+                    if (!string.IsNullOrEmpty(item.id) && !_objects.Exists(other => other != exhibit && other.ObjectId == item.id))
+                        exhibit.ObjectId = item.id;
                     exhibit.Pose.SetPositionAndRotation(_origin + _rotation * item.position, _rotation * Quaternion.Euler(item.rotation));
                     exhibit.Pose.localScale = Vector3.one * Mathf.Clamp(item.scale.x, .12f, 5);
                     exhibit.RestoreExploration(item.step, item.parameter);
@@ -104,6 +107,7 @@ namespace Zap.Constellation
         public bool ApplyReply(StudyReply reply, StudyExhibit target)
         {
             if (reply == null || string.IsNullOrWhiteSpace(reply.answer)) return false;
+            if (reply.action == "apply") return ApplyActions(reply, target);
             if (reply.action == "add" || reply.action == "revise")
             {
                 if (reply.model?.parts == null || reply.model.parts.Length == 0 || reply.model.parts.Length > 28) return false;
@@ -137,7 +141,7 @@ namespace Zap.Constellation
             foreach (var item in _objects)
             {
                 var pose = item.Pose;
-                list.Add(new SavedObject { model = item.Data, position = Quaternion.Inverse(_rotation) * (pose.position - _origin),
+                list.Add(new SavedObject { id = item.ObjectId, model = item.Data, position = Quaternion.Inverse(_rotation) * (pose.position - _origin),
                     rotation = (Quaternion.Inverse(_rotation) * pose.rotation).eulerAngles, scale = pose.localScale,
                     step = item.StepIndex, parameter = item.Parameter, answer = item.Answer,
                     panePlaced = item.Pane.IsPlaced,

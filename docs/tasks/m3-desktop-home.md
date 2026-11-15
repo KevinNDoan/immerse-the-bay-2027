@@ -2,6 +2,14 @@
 
 Updated 2026-11-14. Read `AGENTS.md` and `docs/tasks/m3-desktop-mode.md` first. Core-lane work on the branch `core/app`.
 
+## Changed after review (2026-11-14)
+
+- The home screen was removed at the owner's request. The app opens straight on the constellation.
+- `DesktopHome.cs` became `DesktopSettings.cs`: the settings overlay only, closed at launch, opened by `DesktopSettings.Instance.Show()`.
+- `Settings` and `Quit` buttons sit at the top right of the working panel in `DesktopHud.cs`. `ZAP!` is plain text again and the constellation name is not shown.
+- `ConstellationLibrary`, `Open`, `CreateAndOpen` and `DeleteBall` stay in the code with no panel for switching or creating constellations.
+- The sections below describe the brief as first built. Where they disagree with this list, this list wins.
+
 ## Goal
 
 A skeleton, not a finished design. Plain panels, plain text, everything working.

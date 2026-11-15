@@ -17,7 +17,6 @@ namespace Zap.Desktop
 
         private ConstellationController _controller;
         private TextMeshProUGUI _worldTopic;
-        private TextMeshProUGUI _constellationName;
         private TextMeshProUGUI _status;
         private TextMeshProUGUI _sideTopic;
         private TextMeshProUGUI _sideSummary;
@@ -72,7 +71,6 @@ namespace Zap.Desktop
             if (!showSide) DesktopUi.SetActive(_editObject, false);
 
             DesktopUi.SetText(_worldTopic, inWorld && current != null ? current.Data.topic : string.Empty);
-            DesktopUi.SetText(_constellationName, _controller.ConstellationName);
             DesktopUi.SetText(_status, _controller.IsListening ? "Listening…" : _controller.Status);
             DesktopUi.SetText(_hint, inWorld ? WorldHint : ConstellationHint);
             if (showSide)
@@ -127,21 +125,20 @@ namespace Zap.Desktop
 
             _topPanel = DesktopUi.CreatePanel("Top left", _canvasObject.transform, theme);
             DesktopUi.SetRect(_topPanel.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(510f, -56f), new Vector2(980f, 72f));
-            var homeButton = DesktopUi.CreateButton("Home", _topPanel.transform, "ZAP!", theme);
-            DesktopUi.SetRect((RectTransform)homeButton.transform, new Vector2(0f, .5f), new Vector2(0f, .5f), new Vector2(73f, 0f), new Vector2(110f, 56f));
-            var homeLabel = homeButton.GetComponentInChildren<TextMeshProUGUI>();
-            homeLabel.fontSize = 36f;
-            homeLabel.alignment = TextAlignmentOptions.MidlineLeft;
-            homeButton.onClick.AddListener(ShowHome);
-            _constellationName = DesktopUi.CreateText("Constellation name", _topPanel.transform, string.Empty, 20f, TextAlignmentOptions.MidlineLeft, theme);
-            _constellationName.color = new Color(1f, 1f, 1f, .7f);
-            DesktopUi.SetRect(_constellationName.rectTransform, new Vector2(0f, .5f), new Vector2(0f, .5f), new Vector2(270f, 0f), new Vector2(260f, 40f));
+            var logo = DesktopUi.CreateText("Logo", _topPanel.transform, "ZAP!", 36f, TextAlignmentOptions.MidlineLeft, theme);
+            DesktopUi.SetRect(logo.rectTransform, new Vector2(0f, .5f), new Vector2(0f, .5f), new Vector2(83f, 0f), new Vector2(110f, 56f));
             _worldTopic = DesktopUi.CreateText("World topic", _topPanel.transform, string.Empty, 24f, TextAlignmentOptions.MidlineLeft, theme);
-            DesktopUi.SetRect(_worldTopic.rectTransform, new Vector2(0f, .5f), new Vector2(0f, .5f), new Vector2(612f, 0f), new Vector2(400f, 48f));
+            DesktopUi.SetRect(_worldTopic.rectTransform, new Vector2(0f, .5f), new Vector2(0f, .5f), new Vector2(360f, 0f), new Vector2(400f, 48f));
             _backButton = DesktopUi.CreateButton("Back", _topPanel.transform, "Back", theme);
             DesktopUi.SetRect((RectTransform)_backButton.transform, new Vector2(1f, .5f), new Vector2(1f, .5f), new Vector2(-70f, 0f), new Vector2(112f, 44f));
             _backObject = _backButton.gameObject;
             _backButton.onClick.AddListener(LeaveWorld);
+            var settingsButton = DesktopUi.CreateButton("Settings", _canvasObject.transform, "Settings", theme);
+            DesktopUi.SetRect((RectTransform)settingsButton.transform, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-204f, -56f), new Vector2(124f, 44f));
+            settingsButton.onClick.AddListener(ShowSettings);
+            var quitButton = DesktopUi.CreateButton("Quit", _canvasObject.transform, "Quit", theme);
+            DesktopUi.SetRect((RectTransform)quitButton.transform, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-76f, -56f), new Vector2(112f, 44f));
+            quitButton.onClick.AddListener(Application.Quit);
 
             _topicInput = DesktopUi.CreateInputField("Topic input", _canvasObject.transform, ConstellationPlaceholder, theme);
             DesktopUi.SetRect((RectTransform)_topicInput.transform, new Vector2(.5f, 0f), new Vector2(.5f, 0f), new Vector2(0f, 56f), new Vector2(720f, 56f));
@@ -219,9 +216,9 @@ namespace Zap.Desktop
             if (_controller != null) _controller.LeaveWorld();
         }
 
-        private void ShowHome()
+        private void ShowSettings()
         {
-            DesktopHome.Instance.Show();
+            if (DesktopSettings.Instance != null) DesktopSettings.Instance.Show();
         }
 
         private void DeleteCurrent()

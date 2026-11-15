@@ -61,7 +61,8 @@ namespace Zap.Desktop
             var textArea = new GameObject("Text Area", typeof(RectTransform), typeof(RectMask2D));
             textArea.transform.SetParent(obj.transform, false);
             var viewport = (RectTransform)textArea.transform;
-            SetRect(viewport, Vector2.zero, Vector2.one, new Vector2(18f, 8f), new Vector2(-36f, -16f));
+            // Stretched rect: the size delta alone gives 18 px side and 8 px top and bottom padding. An offset here would push the text off-centre.
+            SetRect(viewport, Vector2.zero, Vector2.one, Vector2.zero, new Vector2(-36f, -16f));
 
             var placeholder = CreateText("Placeholder", textArea.transform, placeholderValue, 20f, TextAlignmentOptions.MidlineLeft, theme);
             placeholder.color = new Color(1f, 1f, 1f, .5f);

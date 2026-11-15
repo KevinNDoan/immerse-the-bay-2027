@@ -61,7 +61,7 @@ namespace Zap.Desktop
             var root = new GameObject("[ZAP Desktop]");
             root.AddComponent<DesktopMode>();
             root.AddComponent<DesktopHud>();
-            root.AddComponent<DesktopHome>();
+            root.AddComponent<DesktopSettings>();
         }
 
         private void Update()

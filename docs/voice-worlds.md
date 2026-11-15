@@ -69,7 +69,11 @@ ZAP_RELAY_URL=http://<laptop-ip>:8787 /Applications/Unity/Hub/Editor/6000.6.9f1/
   -executeMethod ImmerseTheBay.Editor.QuestBuild.BuildDevelopment -logFile /tmp/zap-quest-build.log
 ```
 
-This generates the URL TextAsset through the Editor, includes microphone/Internet permissions in the generated Android manifest, and permits local HTTP for the development build. Shared HTTP player settings are restored afterward. The APK is `Builds/Quest/ImmerseTheBay.apk`.
+This bakes the URL into the APK, includes microphone/Internet permissions in the generated Android manifest, and permits local HTTP for the development build. The APK is `Builds/Quest/ImmerseTheBay.apk`.
+
+The build restores `Assets/_Project/Scripts/Net/Resources/zap_relay_url.txt` afterward, so the tracked file stays empty and one laptop's address is never committed. Without `ZAP_RELAY_URL`, the APK uses `http://127.0.0.1:8787`, which works over USB with `adb reverse` (below).
+
+In the Unity Editor the baked address is ignored: the Editor always uses `http://127.0.0.1:8787` unless a `zap-relay-url.txt` override exists in the app's data folder. Plain HTTP is allowed in the Editor and in development builds, not in release builds (`insecureHttpOption: 1` in `ProjectSettings/ProjectSettings.asset`).
 
 Enable developer mode, connect USB, accept USB debugging inside the headset, then install with Android SDK `adb install -r Builds/Quest/ImmerseTheBay.apk`. Launch package `com.immersethebay.vr`.
 
@@ -103,3 +107,13 @@ Start a stand-in relay for Unity tests with `ORBIS_MODE=standin RELAY_PORT=8787 
 - Live Stable was verified. Dynamic returned a Reactor capacity error during verification.
 - Local speech currently defaults to the English `base.en` model; choose a multilingual model in `SPEECH_MODEL` for other languages.
 - No Satie, multiplayer, imported notes or hand tracking work was added.
+
+## Show the headset view on the laptop (USB)
+
+Install once with `brew install scrcpy` and `brew install --cask android-platform-tools`. With the headset plugged in and awake:
+
+```sh
+scrcpy --crop=1832:1920:0:0 --no-audio --no-control --max-size=1280 --window-title="ZAP headset view"
+```
+
+The crop shows the left eye of a Quest 3S (screen 3664x1920). Check another headset's size with `adb shell wm size` and use half its width. The window is black while the headset is off your head. A Unity headset build restarts the USB service and closes the window; run the command again afterwards.

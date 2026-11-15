@@ -28,7 +28,7 @@ Updated 2026-11-14. Read [README.md](README.md) first. Your branch is `core/app`
 
 ## Step 0, in order
 
-**Status, 2026-11-14:** items 1 to 4 are built on the branch `core/step0` and item 5's checks have been run from the command line. Still to do: play the `Void` scene once yourself, open a pull request, merge it, and tell the others.
+**Status, 2026-11-14:** done and merged into `main` (pull request 2). The compile and all tests passed from the command line. Still to do: play the `Void` scene once to confirm steering inside a world and the status text on the controls card, which no automated test covers.
 
 Do this on a short branch, merge it to `main`, then tell the others to branch.
 

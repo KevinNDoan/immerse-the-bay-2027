@@ -1,0 +1,23 @@
+{
+    "name": "Zap.Desktop",
+    "rootNamespace": "Zap.Desktop",
+    "references": [
+        "Zap.Core",
+        "Zap.Net",
+        "Zap.World",
+        "Zap.Constellation",
+        "Unity.InputSystem",
+        "Unity.TextMeshPro",
+        "Unity.ugui",
+        "Unity.XR.Interaction.Toolkit"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

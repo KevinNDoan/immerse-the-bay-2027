@@ -49,11 +49,15 @@ namespace Zap.Net
                     }
                 }
 
-                var asset = Resources.Load<TextAsset>(ResourceFileName);
-                if (asset != null && !string.IsNullOrWhiteSpace(asset.text))
+                // The bundled address is baked in for a headset build and points at the build machine's network address. In the Editor the relay runs on this machine, so skip it and use the default unless the development override file above says otherwise.
+                if (!Application.isEditor)
                 {
-                    _baseUrl = asset.text.Trim();
-                    return _baseUrl;
+                    var asset = Resources.Load<TextAsset>(ResourceFileName);
+                    if (asset != null && !string.IsNullOrWhiteSpace(asset.text))
+                    {
+                        _baseUrl = asset.text.Trim();
+                        return _baseUrl;
+                    }
                 }
 
                 _baseUrl = DefaultBaseUrl;

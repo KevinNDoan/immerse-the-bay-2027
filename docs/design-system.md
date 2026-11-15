@@ -318,9 +318,13 @@ Short notices that appear in front of the user, in either space.
 - **Wordmark:** "ZAP" in Gabarito Black, with Z, A and P on bouncing baselines and tight spacing. A tilted lightning bolt is the "!".
   - The letters are lightning yellow.
   - An ink copy is offset 9 px left and 3 px up, and a rose copy 8 px right and 4 px down: a "channel split" like a TV picture out of register.
-  - White scanlines at 40% run over the letters only.
+  - No lines over the letters (removed 2026-11-15).
   - The background is transparent. Flat colour only: no gradients, glow or sparkles.
-- **App icon:** the bolt alone, with the same yellow, ink and rose split, on screen silver with faint yellow and blue-grey scanlines. Corners are square; the platform rounds them.
+- **App icon:** the bolt alone, with the same yellow, ink and rose split, on screen silver with faint yellow and blue-grey background lines (none over the bolt). Corners are square; the platform rounds them.
+- **Logo animation:** `brand/zap_logo_animation.html` (website) and `brand/zap_logo_end.mp4` (1920 × 1080 with the zap sound, for the demo video), at the repository root. These are not part of the Unity app.
+  - The bolt glides down and settles. Z, A and P rise and fade in one after another.
+  - The ink and rose channels slide smoothly from wide apart into place.
+  - The background is plain screen silver, with no lines and no glitch effects.
 - **Logo type:** Gabarito (SIL Open Font License) is used only for the logo. The letters are outlined in the file, so no font file ships for it.
 
 ## 6. Motion direction

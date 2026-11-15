@@ -94,6 +94,7 @@ namespace Zap.Constellation
         private Vector3 _cutOrigin;
         private Vector3 _cutDirection;
         private const float CutRange = 4f;
+        private const float CardPointerRange = 6f;
         private const string TutorialHint = "Hold the left stick to skip the tutorial";
         private const string WorldHint = "Left trigger: ask / create · A: new idea\nGrip: object / pane · B: edit · Y: map";
         private const string VoidHint = "Point at an orb + Y: delete…\nThrow: place · X: enter · A: new idea";
@@ -164,6 +165,7 @@ namespace Zap.Constellation
             }
             if (!string.IsNullOrEmpty(launchId))
             {
+                while (IntroSplash.Playing) yield return null;
                 yield return new WaitForSecondsRealtime(.5f);
                 var launch = _balls.FirstOrDefault(ball => ball.Data.id == launchId);
                 if (launch != null) EnterWorld(launch);
@@ -173,8 +175,11 @@ namespace Zap.Constellation
         private void Update()
         {
             if (_voice == null || _world == null) return;
+            // The start-up intro covers the whole view. Nothing is listened to or changed until it has gone.
+            if (IntroSplash.Playing) return;
             FindControllers();
             _input.Poll();
+            UpdateCardPointers();
             if (PendingDeletion != null)
             {
                 if (_input.ExitDown) CancelDeletion();
@@ -245,7 +250,7 @@ namespace Zap.Constellation
                 _tapLinkArmed = false;
             }
             if (Time.unscaledTime - _lastSave > 3) Save();
-            HomeFrame.Hold = WorldActive || _pulling || _cutting || AnyBallHeld();
+            HomeFrame.Hold = WorldActive || _pulling || _cutting || AnyBallHeld() || (_card != null && _card.IsDragging);
             UpdateHud();
             UpdateLines();
             if (Debug.isDebugBuild && InWorld && !Travelling)
@@ -1195,7 +1200,7 @@ namespace Zap.Constellation
         }
         private void BuildHud()
         {
-            _card = ControlsCard.Create(transform);
+            _card = ControlsCard.Create(transform, true);
             if (!ZapPlatform.IsDesktop)
             {
                 _hints = ControllerHints.Create(transform);
@@ -1216,7 +1221,46 @@ namespace Zap.Constellation
             if (CanCancelVoice) hint = IsListening ? "Y: cancel · Release voice button to send\nYou can keep moving and looking around." : "Y: cancel this request\nYou can keep moving and looking around.";
             if (_preparingWorld && _departureNode != null) hint = "Opening your next world…\nY: cancel and stay here";
             string status = Status + (Travelling ? "\n" + Mathf.FloorToInt(_journey.Elapsed) + "s elapsed · Y returns" : "");
-            _card.Show(title, tutorial ? _onboarding.Text : null, status, hint, _voice.IsRecording, _voice.Level, _busy, WorldActive, _left);
+            // The card stays where the person left it, in the void and inside a world. It never rides a controller.
+            _card.Show(title, tutorial ? _onboarding.Text : null, status, hint, _voice.IsRecording, _voice.Level, _busy);
+        }
+
+        // How far along the ray the nearest star, object or pane is. The card leaves the trigger alone when one of
+        // them is in front of it, so a link, a cut or an object press never turns into a card drag.
+        private float NearestTargetAlong(Ray ray)
+        {
+            float nearest = float.PositiveInfinity;
+            if (Physics.Raycast(ray, out var hit, CardPointerRange, ~0, QueryTriggerInteraction.Collide)) nearest = hit.distance;
+            if (_worldVisible) return nearest;
+            // Stars are linked by aiming near them, so they count within the same cone the link gesture uses.
+            RefreshLinkPositions();
+            var ball = BallAt(LinkAim.Nearest(_linkPositions, ray.origin, ray.direction, 6f, CardPointerRange, -1));
+            if (ball != null) nearest = Mathf.Min(nearest, Vector3.Distance(ray.origin, ball.transform.position));
+            return nearest;
+        }
+
+        // The card is a window: while a controller points at it, that hand's trigger moves, resizes or hides the
+        // card and does nothing else. A trigger pressed elsewhere keeps its job even if it sweeps across the card.
+        private void UpdateCardPointers()
+        {
+            if (_card == null) return;
+            var leftRay = _left != null ? new Ray(_left.position, _left.forward) : default;
+            var rightRay = _right != null ? new Ray(_right.position, _right.forward) : default;
+            bool left = _card.Point(0, _left != null, leftRay, _input.AskHeld, _input.Move.y,
+                _left != null ? NearestTargetAlong(leftRay) : float.PositiveInfinity);
+            bool right = _card.Point(1, _right != null, rightRay, _input.RightTrigger, _input.Look.y,
+                _right != null ? NearestTargetAlong(rightRay) : float.PositiveInfinity);
+            if (left)
+            {
+                _input.AskHeld = false;
+                if (_card.DragHand == 0) _input.Move = Vector2.zero;
+            }
+            if (right)
+            {
+                _input.RightTrigger = false;
+                _input.EventDown = false;
+                if (_card.DragHand == 1) _input.Look = Vector2.zero;
+            }
         }
         public void SetStatus(string text) { Status = text; }
         public void Save()

@@ -9,6 +9,7 @@ namespace Zap.Core
     {
         const string RigName = "XR Origin (XR Rig)";
         const float MinProjectedSqr = 1e-4f;
+        const float MinLevelForwardSqr = 0.03f;
         const float TrackedPoseSqr = 1e-6f;
         const float AlignAfterTracked = 0.3f;
         const float AlignAnywayAfter = 1.5f;
@@ -16,20 +17,25 @@ namespace Zap.Core
 
         public static int Version { get; private set; }
         public static float HeadHeight { get; private set; } = 1.5f;
+        public static bool Hold { get; set; }
 
         static HomeFrame _instance;
 
         readonly List<XRInputSubsystem> _inputSubsystems = new List<XRInputSubsystem>();
         Transform _rig;
         Transform _head;
+        Vector3 _samplePosition;
+        Quaternion _sampleRotation;
         float _requestedAt;
         float _nextSubscribeAt;
         bool _pending;
-        bool _inputsSubscribed;
+        bool _sampled;
+        bool _provisional;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetStatics()
         {
+            Hold = false;
             Version = 0;
             HeadHeight = 1.5f;
             _instance = null;
@@ -67,13 +73,15 @@ namespace Zap.Core
             if (_instance == null) return;
             _instance._pending = true;
             _instance._requestedAt = Time.unscaledTime;
+            _instance._provisional = false;
+            _instance._sampled = false;
         }
 
         void Awake()
         {
             _instance = this;
             Request();
-            TrySubscribeInputs();
+            SubscribeInputs();
             _nextSubscribeAt = Time.unscaledTime + SubscribeInterval;
         }
 
@@ -97,13 +105,13 @@ namespace Zap.Core
 
         void Update()
         {
-            if (!_inputsSubscribed && Time.unscaledTime >= _nextSubscribeAt)
+            if (Time.unscaledTime >= _nextSubscribeAt)
             {
                 _nextSubscribeAt = Time.unscaledTime + SubscribeInterval;
-                TrySubscribeInputs();
+                SubscribeInputs();
             }
 
-            if (!_pending) return;
+            if (!_pending && !_provisional) return;
 
             if (_rig == null)
             {
@@ -119,30 +127,74 @@ namespace Zap.Core
 
             if (_rig == null || _head == null) return;
 
-            var elapsed = Time.unscaledTime - _requestedAt;
-            var tracked = _head.localPosition.sqrMagnitude > TrackedPoseSqr
-                || _head.localRotation != Quaternion.identity;
-            if ((elapsed >= AlignAfterTracked && tracked) || elapsed >= AlignAnywayAfter)
+            if (_pending && !_sampled)
+                SampleHead();
+
+            if (Hold) return;
+
+            if (!_pending)
             {
-                Align(_rig, _head);
-                HeadHeight = _head.position.y;
-                Version += 1;
+                if (PoseReady())
+                {
+                    ApplyAlignment();
+                    _provisional = false;
+                }
+                return;
+            }
+
+            var elapsed = Time.unscaledTime - _requestedAt;
+            if (elapsed >= AlignAfterTracked && PoseReady())
+            {
+                ApplyAlignment();
                 _pending = false;
+                _provisional = false;
+                return;
+            }
+
+            if (elapsed >= AlignAnywayAfter)
+            {
+                ApplyAlignment();
+                SampleHead();
+                _pending = false;
+                _provisional = true;
             }
         }
 
-        void TrySubscribeInputs()
+        void SubscribeInputs()
         {
-            if (_inputsSubscribed) return;
-
             SubsystemManager.GetSubsystems(_inputSubsystems);
             for (var i = 0; i < _inputSubsystems.Count; i++)
             {
                 var subsystem = _inputSubsystems[i];
                 if (subsystem == null) continue;
+                subsystem.trackingOriginUpdated -= OnTrackingOriginUpdated;
                 subsystem.trackingOriginUpdated += OnTrackingOriginUpdated;
-                _inputsSubscribed = true;
             }
+        }
+
+        void SampleHead()
+        {
+            _samplePosition = _head.localPosition;
+            _sampleRotation = _head.localRotation;
+            _sampled = true;
+        }
+
+        bool PoseReady()
+        {
+            var projected = _head.forward;
+            projected.y = 0f;
+            var tracked = _head.localPosition.sqrMagnitude > TrackedPoseSqr
+                || _head.localRotation != Quaternion.identity;
+            var fresh = _head.localPosition != _samplePosition
+                || _head.localRotation != _sampleRotation;
+            return tracked && fresh && projected.sqrMagnitude >= MinLevelForwardSqr;
+        }
+
+        void ApplyAlignment()
+        {
+            Align(_rig, _head);
+            HeadHeight = _head.position.y;
+            Version += 1;
         }
 
         void OnTrackingOriginUpdated(XRInputSubsystem subsystem)

@@ -2,6 +2,15 @@
 
 Updated 2026-11-14. Read `AGENTS.md` first. Core-lane work on the branch `core/app`.
 
+## Changed after review (2026-11-14)
+
+- `HomeFrame` gained `public static bool Hold { get; set; }`. While it is true the rig is not moved. `ConstellationController.Update` sets it while a ball is held, during a two-grip pull, and during a cut sweep.
+- Alignment waits for a head pose that changed since the request, so a pose left over from before a pause is not used.
+- Alignment waits until the head is not looking almost straight up or down.
+- After 1.5 seconds with no usable pose the rig is aligned anyway, then aligned once more when a usable pose arrives. In the Editor simulator this shows as one snap the first time the simulated head moves.
+- Input subsystems are looked up again every second, so recentring keeps working after the XR session restarts.
+- Where the sections below disagree with this list, this list wins.
+
 ## Goal
 
 When ZAP! starts in the headset, the controls card and the workspace are straight ahead of the person, the way the Quest's own onboarding card is. Today the card rides on the left controller and the constellation sits wherever the tracking space happens to point, so people have to turn around to find things.

@@ -107,6 +107,7 @@ namespace Zap.Constellation
             if (_worldVisible && !_world.IsEntered) ShowConstellation();
             if (!_world.IsEntered && !_busy && !_voice.IsRecording) UpdateConstellationControls();
             if (Time.unscaledTime - _lastSave > 3) Save();
+            HomeFrame.Hold = _pulling || _cutting || AnyBallHeld();
             UpdateHud();
             UpdateLines();
         }
@@ -348,6 +349,16 @@ namespace Zap.Constellation
             _pulling = canPull;
         }
 
+        private bool AnyBallHeld()
+        {
+            for (int i = 0; i < _balls.Count; i++)
+            {
+                var ball = _balls[i];
+                if (ball != null && ball.Grab.isSelected) return true;
+            }
+            return false;
+        }
+
         public bool CutAcross(Vector3 previousOrigin, Vector3 previousDirection, Vector3 origin, Vector3 direction)
         {
             int index = -1;
@@ -523,6 +534,7 @@ namespace Zap.Constellation
         private void OnApplicationQuit() { Save(); }
         private void OnDestroy()
         {
+            HomeFrame.Hold = false;
             if (_worldControls != null) _worldControls.StatusChanged -= SetStatus;
             if (_material) Destroy(_material);
             if (_lineMaterial) Destroy(_lineMaterial);

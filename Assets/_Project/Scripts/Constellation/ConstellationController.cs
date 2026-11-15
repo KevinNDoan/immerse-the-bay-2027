@@ -47,7 +47,7 @@ namespace Zap.Constellation
         private LineRenderer _linkPreview;
         private string _voiceAction;
         private string _savePath;
-        private bool _busy, _recordButton, _trigger, _worldVisible, _pulling, _dirty, _tapLinkArmed;
+        private bool _busy, _recordButton, _trigger, _worldVisible, _pulling, _dirty, _lineTextured, _tapLinkArmed;
         private Vector3 _pullMidpoint;
         private float _pullDistance, _lastSave, _recordStart;
         private bool _cutting;
@@ -74,13 +74,18 @@ namespace Zap.Constellation
             gameObject.AddComponent<SuggestedStars>().Initialize(this, _content);
             _material = new Material(Shader.Find("Zap/Solid"));
             _material.SetColor("_BaseColor", ZapTheme.Current.nodeColor);
-            _lineMaterial = new Material(Shader.Find("Zap/Solid"));
+            var lineImage = ZapTheme.Current.lineImage;
+            _lineTextured = lineImage != null && ZapArt.Material != null;
+            _lineMaterial = _lineTextured ? new Material(ZapArt.Material) : new Material(Shader.Find("Zap/Solid"));
+            if (_lineTextured) _lineMaterial.SetTexture("_MainTex", lineImage);
             _lineMaterial.SetColor("_BaseColor", ZapTheme.Current.lineColor);
             var preview = new GameObject("Link preview");
             preview.transform.SetParent(_content, false);
             _linkPreview = preview.AddComponent<LineRenderer>();
             _linkPreview.sharedMaterial = _lineMaterial;
             _linkPreview.positionCount = 2;
+            // Same as the connection lines: the line image repeats instead of stretching.
+            if (_lineTextured) _linkPreview.textureMode = LineTextureMode.Tile;
             _linkPreview.enabled = false;
             _voice = gameObject.AddComponent<VoiceRecorder>();
             _voice.Error += SetStatus;
@@ -544,6 +549,8 @@ namespace Zap.Constellation
                 var obj = new GameObject("Connection"); obj.transform.SetParent(_content, false);
                 var line = obj.AddComponent<LineRenderer>();
                 line.sharedMaterial = _lineMaterial; line.positionCount = 2;
+                // The line image repeats along the line instead of stretching.
+                if (_lineTextured) line.textureMode = LineTextureMode.Tile;
                 _lines.Add(line);
             }
         }
@@ -552,12 +559,22 @@ namespace Zap.Constellation
             var theme = ZapTheme.Current;
             _material.SetColor("_BaseColor", theme.nodeColor);
             _lineMaterial.SetColor("_BaseColor", theme.lineColor);
-            if (_linkPreview != null) _linkPreview.widthMultiplier = theme.lineWidth * 2f;
+            float width = _lineTextured ? theme.lineImageWidth : theme.lineWidth;
+            // One repeat of the image is as long as its aspect ratio times the line width.
+            var tiling = Vector2.one;
+            if (_lineTextured && theme.lineImage != null && width > 0)
+                tiling.x = theme.lineImage.height / (theme.lineImage.width * width);
+            if (_linkPreview != null)
+            {
+                _linkPreview.widthMultiplier = width * 2f;
+                if (_lineTextured) _linkPreview.textureScale = tiling;
+            }
             for (int i = 0; i < _edges.Count; i++)
             {
                 var from = _balls.FirstOrDefault(b => b.Data.id == _edges[i].from);
                 var to = _balls.FirstOrDefault(b => b.Data.id == _edges[i].to);
-                _lines[i].widthMultiplier = theme.lineWidth;
+                _lines[i].widthMultiplier = width;
+                if (_lineTextured) _lines[i].textureScale = tiling;
                 _lines[i].enabled = from && to && !from.IsTossed && !to.IsTossed;
                 if (_lines[i].enabled) { _lines[i].SetPosition(0, from.transform.position); _lines[i].SetPosition(1, to.transform.position); }
             }

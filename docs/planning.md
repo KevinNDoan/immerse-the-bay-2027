@@ -1,5 +1,7 @@
 # ZAP! planning doc
 
+**Current demo refresh (2026-11-14, later evening):** Build a fresh collection with Great Wall exterior → watchtower interior and an independent DNA biology lab. All worlds have movable panes; the Great Wall worlds initially have no artifact. The owner authorized these three new worlds, then directed us to finish the exterior with the supplied 7,000-credit account and wait for another key for the other two. The prior single-world limit is superseded for this explicit collection only. No automatic environment generation is authorized outside it. Topic-specific choices belong in demo data, not runtime routing code.
+
 **Pane feedback (2026-11-14, evening):** Explanations belong on movable glass panes. The left-hand display should provide controls and brief status rather than duplicate learning content. Requests need visible progress/errors, answers must remain with the intended object, and an unfinished new idea must be cancellable. Pane placement should persist with the idea's exploration objects. The saved-world budget remains unchanged.
 
 **Latest headset feedback (2026-11-14):** Treat the world as a haven for exploration. Floating objects do not need to be physically attached to furnishings. Prioritize recognizable models, direct zoom/rotation, meaningful discoveries and explanations, and wishing additional objects into the same space. Examples are quality targets, not topic-routing templates. A should show an orb immediately and keep it glowing while held. Preserve the single-world budget.

@@ -10,7 +10,7 @@ namespace Zap.Constellation
     {
         public StudyExhibit Current { get; private set; }
         public IReadOnlyList<StudyExhibit> Objects => _objects;
-        public bool Full => _objects.Count >= 6;
+        public bool Full => _objects.FindAll(item => item.HasModel).Count >= 6;
         private readonly List<StudyExhibit> _objects = new List<StudyExhibit>();
         private string _path;
         private Vector3 _origin;
@@ -28,7 +28,7 @@ namespace Zap.Constellation
         }
         [Serializable] private class SavedSpace { public int version = 1; public SavedObject[] objects; }
 
-        public void Open(string nodeId, StudyModelData initial)
+        public void Open(string nodeId, StudyModelData initial, WorldPaneData pane = null)
         {
             Close();
             if (Camera.main == null) return;
@@ -44,7 +44,7 @@ namespace Zap.Constellation
                 try
                 {
                     if (File.Exists(candidate)) saved = JsonUtility.FromJson<SavedSpace>(File.ReadAllText(candidate));
-                    if (saved?.version == 1 && saved.objects != null && saved.objects.Length <= 6) break;
+                    if (saved?.version == 1 && saved.objects != null && saved.objects.Length <= 7) break;
                     saved = null;
                 }
                 catch (Exception e) when (e is IOException || e is ArgumentException) { saved = null; }
@@ -53,27 +53,32 @@ namespace Zap.Constellation
                 foreach (var item in saved.objects)
                 {
                     var exhibit = Add(item.model, false);
-                    if (exhibit?.Grab == null) continue;
-                    exhibit.Grab.transform.SetPositionAndRotation(_origin + _rotation * item.position, _rotation * Quaternion.Euler(item.rotation));
-                    exhibit.Grab.transform.localScale = Vector3.one * Mathf.Clamp(item.scale.x, .12f, 5);
+                    if (exhibit?.Pose == null) continue;
+                    exhibit.Pose.SetPositionAndRotation(_origin + _rotation * item.position, _rotation * Quaternion.Euler(item.rotation));
+                    exhibit.Pose.localScale = Vector3.one * Mathf.Clamp(item.scale.x, .12f, 5);
                     exhibit.RestoreExploration(item.step, item.parameter);
                     if (!string.IsNullOrEmpty(item.answer)) exhibit.Explain(item.answer);
                     if (item.panePlaced) exhibit.Pane.Place(_origin + _rotation * item.panePosition, _rotation * Quaternion.Euler(item.paneRotation));
                 }
-            if (_objects.Count == 0 && initial != null) Add(initial);
+            if (_objects.Count == 0)
+            {
+                if (initial != null) Add(initial);
+                if (_objects.Count == 0) Add(new StudyModelData {title=pane?.title ?? "Explore this world",
+                    explanation=pane?.text ?? "Look around and explore the space. Hold left trigger to ask a question or wish an object into creation.", parts=Array.Empty<StudyPartData>()});
+            }
         }
 
         public StudyExhibit Add(StudyModelData data, bool arrange = true)
         {
-            if (Full || data?.parts == null || data.parts.Length == 0) return null;
+            if (data?.parts == null || (Full && data.parts.Length > 0) || (data.parts.Length == 0 && _objects.Exists(item => !item.HasModel))) return null;
             var obj = new GameObject("Exploration object"); obj.transform.SetParent(transform, false);
             var exhibit = obj.AddComponent<StudyExhibit>(); exhibit.Build(data);
-            if (exhibit.Grab == null) { Destroy(obj); return null; }
+            if (exhibit.Pane == null) { Destroy(obj); return null; }
             if (arrange && Camera.main != null)
             {
                 foreach (var other in _objects)
-                    if (!other.IsHeld && Vector3.Distance(other.Grab.transform.position, exhibit.Grab.transform.position) < .8f)
-                        other.Grab.transform.position += Camera.main.transform.right * (_objects.Count % 2 == 0 ? 1 : -1);
+                    if (!other.IsHeld && Vector3.Distance(other.Pose.position, exhibit.Pose.position) < .8f)
+                        other.Pose.position += Camera.main.transform.right * (_objects.Count % 2 == 0 ? 1 : -1);
             }
             _objects.Add(exhibit); SetCurrent(exhibit);
             return exhibit;
@@ -109,7 +114,8 @@ namespace Zap.Constellation
                 }
                 else
                 {
-                    var pose = target.Grab.transform;
+                    if (!target.HasModel && Full) return false;
+                    var pose = target.Pose;
                     Vector3 position = pose.position, scale = pose.localScale; Quaternion rotation = pose.rotation;
                     bool panePlaced = target.Pane.IsPlaced;
                     Vector3 panePosition = target.Pane.transform.position; Quaternion paneRotation = target.Pane.transform.rotation;
@@ -130,7 +136,7 @@ namespace Zap.Constellation
             var list = new List<SavedObject>();
             foreach (var item in _objects)
             {
-                var pose = item.Grab.transform;
+                var pose = item.Pose;
                 list.Add(new SavedObject { model = item.Data, position = Quaternion.Inverse(_rotation) * (pose.position - _origin),
                     rotation = (Quaternion.Inverse(_rotation) * pose.rotation).eulerAngles, scale = pose.localScale,
                     step = item.StepIndex, parameter = item.Parameter, answer = item.Answer,

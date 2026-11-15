@@ -34,7 +34,7 @@ namespace Zap.World
         private readonly RaycastHit[] _hits = new RaycastHit[48];
         private readonly Collider[] _overlaps = new Collider[48];
 
-        public IEnumerator Load(EnvironmentManifest manifest, string relayUrl, Action<string> status, Action<string> done)
+        public IEnumerator Load(EnvironmentManifest manifest, string relayUrl, Action<string> status, Action<string> done, bool alignStudySurface = true)
         {
             Clear(); int generation = _generation;
             if (manifest?.visual == null || manifest.visual.Length == 0 || manifest.visual.Length > 64 ||
@@ -138,7 +138,7 @@ namespace Zap.World
                 Physics.SyncTransforms();
                 // Reveal a useful supporting surface in front of the viewer when one
                 // exists nearby, without rotating or moving the tracked camera.
-                if (FindStudySurface(out var support) && support.point.y > floor + .4f)
+                if (alignStudySurface && FindStudySurface(out var support) && support.point.y > floor + .4f)
                 {
                     var toward = Vector3.ProjectOnPlane(support.point - Camera.main.transform.position, Vector3.up);
                     var forward = Vector3.ProjectOnPlane(Camera.main.transform.forward, Vector3.up);

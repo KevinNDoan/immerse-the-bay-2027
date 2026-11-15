@@ -50,7 +50,12 @@ namespace Zap.Constellation
     [Serializable] public class PreparedWorld
     {
         public StudyModelData plan;
+        public WorldPaneData pane;
+        // JsonUtility can materialize a JSON null object as an empty serializable
+        // instance. Presence of actual geometry is the boundary, not plan != null.
+        public bool HasArtifact => plan?.parts != null && plan.parts.Length > 0;
         public string image, projection, notice, cacheKey, state;
         public Zap.World.EnvironmentManifest environment;
     }
+    [Serializable] public class WorldPaneData { public string title, text; }
 }

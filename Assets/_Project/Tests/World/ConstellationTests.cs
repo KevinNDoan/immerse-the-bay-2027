@@ -14,6 +14,20 @@ namespace Zap.World.Tests
     public class ConstellationTests
     {
         [Test]
+        public void WorldNeighboursKeepParentChildTravelSeparateFromOtherDomains()
+        {
+            var wall = new NodeData { id="wall", topic="Exterior" };
+            var tower = new NodeData { id="tower", topic="Interior", parentIds=new[]{"wall"} };
+            var lab = new NodeData { id="lab", topic="Biology" };
+            var nodes = new[]{wall,tower,lab};
+            CollectionAssert.AreEqual(new[]{tower},NodeContext.Neighbours(wall,nodes));
+            CollectionAssert.AreEqual(new[]{wall},NodeContext.Neighbours(tower,nodes));
+            Assert.IsEmpty(NodeContext.Neighbours(lab,nodes));
+            Assert.IsEmpty(NodeContext.Parents(lab,nodes));
+            CollectionAssert.AreEqual(new[]{wall},NodeContext.Parents(tower,nodes));
+        }
+
+        [Test]
         public void ParentContextIncludesMultipleBranchesAndSurvivesSave()
         {
             var ocean = new NodeData { topic = "Ocean ecosystems", summary = "Life in the deep ocean" };

@@ -19,7 +19,7 @@ namespace Zap.Constellation
         public IReadOnlyList<TopicBall> Balls => _balls;
         public string Status { get; private set; } = "Hold A and say a topic. Release to write it on a ball.";
         public bool Busy => _busy;
-        public bool CanCancelVoice => _busy || _draftBall != null || (_voice != null && (_voice.IsRecording || _voice.IsStarting));
+        public bool CanCancelVoice => (_busy && !_preparingWorld) || _draftBall != null || (_voice != null && (_voice.IsRecording || _voice.IsStarting));
         private readonly List<TopicBall> _balls = new List<TopicBall>();
         private readonly List<NodeEdge> _edges = new List<NodeEdge>();
         private readonly List<LineRenderer> _lines = new List<LineRenderer>();
@@ -102,6 +102,24 @@ namespace Zap.Constellation
             var stream = _world.GetComponent<WorldStream>();
             stream.OnFrameDecoded += FrameReceived;
             BuildHud();
+            // A one-shot development launch lets a prepared demo be checked on a
+            // connected headset without synthesizing XR controller input.
+            string launchId = null;
+            if (Debug.isDebugBuild || Application.isEditor)
+            {
+                string launchPath = Path.Combine(Application.persistentDataPath,"zap-enter-node.txt");
+                try
+                {
+                    if (File.Exists(launchPath)) { launchId = File.ReadAllText(launchPath).Trim(); File.Delete(launchPath); }
+                }
+                catch (IOException) { Debug.LogWarning("Could not read the requested demo entry."); }
+            }
+            if (!string.IsNullOrEmpty(launchId))
+            {
+                yield return new WaitForSecondsRealtime(.5f);
+                var launch = _balls.FirstOrDefault(ball => ball.Data.id == launchId);
+                if (launch != null) EnterWorld(launch);
+            }
         }
 
         private void Update()
@@ -268,7 +286,7 @@ namespace Zap.Constellation
             if (ball.Data.imageContext == stamp && !string.IsNullOrEmpty(ball.Data.image))
             { _previewRequests.Remove(ball); yield break; }
             ball.Data.image = ""; ball.Refresh();
-            using var request = UnityWebRequest.Get(RelayConfig.BaseUrl.TrimEnd('/') + "/world/preview");
+            using var request = UnityWebRequest.Get(RelayConfig.BaseUrl.TrimEnd('/') + "/world/preview?nodeId=" + UnityWebRequest.EscapeURL(ball.Data.id));
             request.timeout = 15; yield return request.SendWebRequest();
             _previewRequests.Remove(ball);
             if (ball == null || request.result != UnityWebRequest.Result.Success ||
@@ -457,7 +475,7 @@ namespace Zap.Constellation
         private IEnumerator PrepareAndEnter(TopicBall ball, string context, int version)
         {
             string response = null;
-            var request = new PrepareRequest { topic = ball.Data.topic, context = context };
+            var request = new PrepareRequest { nodeId = ball.Data.id, topic = ball.Data.topic, context = context };
             yield return Post("/world/prepare", Encoding.UTF8.GetBytes(JsonUtility.ToJson(request)), "application/json", result => response = result, 170);
             if (version != _worldRequest || !_preparingWorld) yield break;
             PreparedWorld prepared = null;
@@ -490,17 +508,19 @@ namespace Zap.Constellation
             {
                 string error = null;
                 _world.GetComponent<DomeView>().SetVisible(false);
-                yield return _environment.Load(prepared.environment, RelayConfig.BaseUrl, SetStatus, failure => error = failure);
+                yield return _environment.Load(prepared.environment, RelayConfig.BaseUrl, SetStatus, failure => error = failure, prepared.HasArtifact);
                 if (version != _worldRequest) yield break;
                 if (error != null) { ShowConstellation(); SetStatus(error); yield break; }
                 _navigation.Enter(_environment);
-                _space.Open(ball.Data.id, prepared.plan);
+                _space.Open(ball.Data.id, prepared.HasArtifact ? prepared.plan : null, prepared.pane);
+                ShowLinkedWorlds();
                 _preparingWorld = false; _busy = false;
                 _journey.MarkReady();
                 SetStatus("Your exploration space is ready. Grip to inspect; hold left trigger to ask or create an object.");
                 yield break;
             }
-            _space.Open(ball.Data.id, prepared?.plan);
+            _space.Open(ball.Data.id, prepared?.HasArtifact == true ? prepared.plan : null, prepared?.pane);
+            ShowLinkedWorlds();
             string image = !string.IsNullOrEmpty(ball.Data.image) ? ball.Data.image : prepared?.image ?? "";
             if (!string.IsNullOrEmpty(image)) { ball.Data.image = image; ball.Refresh(); _dirty = true; }
             _navigation.Enter();
@@ -509,12 +529,33 @@ namespace Zap.Constellation
             SetStatus(string.IsNullOrEmpty(prepared?.notice) ? "Surroundings ready. Connecting the live world…" : prepared.notice);
         }
 
+        private void ShowLinkedWorlds()
+        {
+            if (_worldNode == null || Camera.main == null) return;
+            var head = Camera.main.transform;
+            var forward = Vector3.ProjectOnPlane(head.forward,Vector3.up).normalized;
+            if (forward.sqrMagnitude < .1f) forward = Vector3.forward;
+            var right = Vector3.Cross(Vector3.up,forward);
+            var linked = NodeContext.Neighbours(_worldNode.Data,_balls.Select(b => b.Data));
+            int index = 0;
+            foreach (var node in linked.Take(6))
+            {
+                var ball = _balls.FirstOrDefault(item => item.Data.id == node.id);
+                if (ball == null || _branchPositions.ContainsKey(ball)) continue;
+                _branchPositions[ball] = ball.Data.position;
+                ball.transform.SetParent(_branches,true);
+                ball.transform.position = head.position + forward * (1.4f + index/3*.35f) - right * 1.05f + Vector3.down * (.1f + index%3*.3f);
+                ball.Body.linearVelocity = Vector3.zero; ball.Body.angularVelocity = Vector3.zero;
+                ball.SetSelected(false); index++;
+            }
+        }
+
         private StudyRequest CaptureStudy(StudyExhibit target)
         {
             return new StudyRequest { topic = _worldNode.Data.topic, context = _worldContext,
-                current = target?.Data, focused = target?.FocusedName ?? "",
+                current = target != null && target.HasModel ? target.Data : null, focused = target?.FocusedName ?? "",
                 step = target?.StepIndex ?? -1, parameter = target?.Parameter ?? 0,
-                objects = _space.Objects.Select(item => item.Data.title).ToArray() };
+                objects = _space.Objects.Where(item => item.HasModel).Select(item => item.Data.title).ToArray() };
         }
         private IEnumerator UpdateStudy(string instruction, int version, int operation, StudyExhibit target = null, StudyRequest request = null)
         {
@@ -791,7 +832,7 @@ namespace Zap.Constellation
         [Serializable] private class ParentNote { public string id; public string topic; public string summary; }
         [Serializable] private class NodeRequest { public string action; public string text; public NodeData node; public ParentNote[] parents; }
         [Serializable] private class NodeResult { public string topic; public string summary; public string worldPrompt; public string[] suggestions; public string mode; }
-        [Serializable] private class PrepareRequest { public string topic; public string context; }
+        [Serializable] private class PrepareRequest { public string nodeId; public string topic; public string context; }
         [Serializable] private class StudyRequest { public string topic; public string context; public string instruction; public StudyModelData current; public string focused; public string[] objects; public int step; public float parameter; }
     }
 }

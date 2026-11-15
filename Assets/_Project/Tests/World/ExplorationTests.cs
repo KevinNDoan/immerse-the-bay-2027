@@ -16,6 +16,63 @@ namespace Zap.World.Tests
 {
     public class ExplorationTests
     {
+        [Test]
+        public void WorldLoadingDoesNotConsumeReturnAsVoiceCancellation()
+        {
+            var obj=new GameObject("Loading cancellation"); var controller=obj.AddComponent<ConstellationController>(); controller.enabled=false;
+            try
+            {
+                const BindingFlags flags=BindingFlags.Instance|BindingFlags.NonPublic;
+                typeof(ConstellationController).GetField("_busy",flags).SetValue(controller,true);
+                typeof(ConstellationController).GetField("_preparingWorld",flags).SetValue(controller,true);
+                Assert.IsFalse(controller.CanCancelVoice);
+                Assert.IsFalse(controller.CancelPendingVoice(),"Y must reach LeaveWorld during environment loading.");
+            }
+            finally { Object.DestroyImmediate(obj); }
+        }
+
+        [UnityTest]
+        public IEnumerator WorldWithoutArtifactStillHasMovablePaneAndCanAnswerOrAddObjects()
+        {
+            var camera=new GameObject("Guide camera"); camera.tag="MainCamera"; camera.AddComponent<Camera>(); camera.transform.position=Vector3.up*1.6f;
+            var obj=new GameObject("Guide workspace"); var workspace=obj.AddComponent<StudyWorkspace>();
+            string id="guide-test-"+Guid.NewGuid().ToString("N");
+            try
+            {
+                var response=JsonUtility.FromJson<PreparedWorld>("{\"plan\":null,\"pane\":{\"title\":\"Explore the architecture\",\"text\":\"Look at the arches and the surrounding landscape.\"}}");
+                Assert.IsFalse(response.HasArtifact);
+                workspace.Open(id,response.HasArtifact ? response.plan : null,response.pane);
+                yield return null;
+                var guide=workspace.Current;
+                Assert.IsFalse(guide.HasModel); Assert.IsNull(guide.Grab);
+                Assert.IsNotNull(guide.Pane.Grab);
+                StringAssert.Contains("arches",guide.Pane.BodyText);
+                Assert.AreEqual(0,guide.PartCount,"A world without an artifact must not get dummy geometry.");
+                Assert.IsTrue(workspace.ApplyReply(new StudyReply {action="answer",answer="The arch carries load around its opening."},guide));
+                guide.Pane.Place(new Vector3(.2f,1.5f,1.2f),Quaternion.Euler(0,10,0));
+                workspace.Save(); workspace.Close(); yield return null;
+                workspace.Open(id,null); yield return null;
+                guide=workspace.Current;
+                Assert.IsFalse(guide.HasModel); Assert.IsTrue(guide.Pane.IsPlaced);
+                Assert.AreEqual("The arch carries load around its opening.",guide.Pane.BodyText);
+                for(int i=0;i<6;i++) Assert.IsTrue(workspace.ApplyReply(new StudyReply {action="add",answer="An object to inspect.",model=Model()},guide));
+                Assert.AreEqual(7,workspace.Objects.Count); Assert.IsTrue(workspace.Full);
+                Assert.IsFalse(workspace.ApplyReply(new StudyReply {action="add",answer="Too many.",model=Model()},guide));
+                Assert.IsFalse(guide.HasModel,"Adding an object must preserve the world guide.");
+            }
+            finally
+            {
+                workspace.Close();
+                using(var hash=System.Security.Cryptography.SHA256.Create())
+                {
+                    string key=BitConverter.ToString(hash.ComputeHash(System.Text.Encoding.UTF8.GetBytes(id))).Replace("-", "");
+                    string path=Path.Combine(Application.persistentDataPath,"exploration",key+".json");
+                    foreach(string suffix in new[]{"",".bak",".tmp"}) if(File.Exists(path+suffix)) File.Delete(path+suffix);
+                }
+                Object.Destroy(obj); Object.Destroy(camera);
+            }
+        }
+
         private static StudyModelData Model() => new StudyModelData {
             title="A connected structure", explanation="Inspect a continuous curve and its repeated connections.",
             parts=new[] {

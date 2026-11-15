@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from zap_relay.config import Settings
-from zap_relay.mesh_assets import GLB, convert_glb
+from zap_relay.mesh_assets import GLB, convert_glb, project_panorama
 from zap_relay.spatial import SpatialPreparation
 from zap_relay.worldlabs import WorldLabs
 
@@ -56,6 +56,43 @@ def test_generation_and_export_are_disabled_by_default():
             with pytest.raises(RuntimeError,match='disabled'): await api.request('POST','/worlds:generate',{})
             with pytest.raises(RuntimeError,match='disabled'): await api.request('POST','/worlds/existing-world:export',{})
         assert not requests
+    asyncio.run(scenario())
+
+
+def test_panorama_surface_projection_preserves_geometry_and_splits_back_seam():
+    positions=np.array([[.1,0,-1],[-.1,0,-1],[.1,.2,-1],[0,1,0],[0,-1,0],[0,0,1]],dtype=np.float32)
+    triangles=np.array([[0,1,2]],dtype=np.uint32)
+    projected,uv,indices=project_panorama(positions,triangles)
+    np.testing.assert_allclose(projected[indices],positions[triangles])
+    assert np.ptp(uv[indices,0],axis=1).max()<.05, 'The back seam must not smear the front of the panorama.'
+    assert len(projected)>len(positions)
+    np.testing.assert_allclose(uv[3:6,1],[1,0,.5],atol=1e-6)
+    np.testing.assert_allclose(uv[5],[.5,.5])
+
+
+def test_local_texture_repair_reimports_cached_assets_without_provider_calls(tmp_path):
+    from PIL import Image
+    class NoCalls:
+        def __getattr__(self,name): raise AssertionError('Texture repair must use existing assets only.')
+    async def scenario():
+        service=SpatialPreparation(Settings('standin','','model',8794),None,tmp_path,NoCalls())
+        key='a'*64; folder=service._folder(key); folder.mkdir()
+        for name in ('world.glb','collider.glb'): (folder/name).write_bytes(triangle_glb())
+        Image.new('RGB',(64,32),(100,140,180)).save(folder/'pano.png')
+        original=await service.import_assets(folder,key)
+        mesh_before=(folder/'assets/visual-0.mesh').read_bytes()
+        collider_before=(folder/'assets/collision-0.mesh').read_bytes()
+        repaired=await service.import_assets(folder,key,'panorama')
+        assert repaired['environment']['textureProjection']=='panorama'
+        assert repaired['environment']['visual'][0]['texture']=='visual-0.jpg'
+        assert repaired['environment']['visual'][0]['triangles']==original['environment']['visual'][0]['triangles']
+        assert (folder/'assets/visual-0.mesh').read_bytes()!=mesh_before
+        assert (folder/'assets/collision-0.mesh').read_bytes()==collider_before
+        assert (folder/'world.glb').read_bytes()==triangle_glb()
+        restored=await service.import_assets(folder,key,'atlas')
+        assert restored['environment']['textureProjection']=='atlas'
+        assert (folder/'assets/visual-0.mesh').read_bytes()==mesh_before
+        await service.close()
     asyncio.run(scenario())
 
 

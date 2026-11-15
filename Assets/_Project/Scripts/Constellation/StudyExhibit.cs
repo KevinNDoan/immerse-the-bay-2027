@@ -16,6 +16,8 @@ namespace Zap.Constellation
         public bool Exploded { get; private set; }
         public int PartCount => _parts.Count;
         public XRGrabInteractable Grab => _grab;
+        public bool HasModel => _parts.Count > 0;
+        public Transform Pose => _model != null ? _model.transform : null;
         public int StepIndex { get; private set; } = -1;
         public float Parameter { get; private set; }
         public string FocusedName => _focused >= 0 ? _parts[_focused].data.name : "";
@@ -52,10 +54,11 @@ namespace Zap.Constellation
 
         public void Build(StudyModelData data)
         {
-            if (data?.parts == null || data.parts.Length == 0 || data.parts.Length > 28) return;
+            if (data?.parts == null || data.parts.Length > 28) return;
             Clear(); Data = data;
             _model = new GameObject("Explore: " + data.title);
             _model.transform.SetParent(transform, false);
+            if (data.parts.Length == 0) { BuildPane(); return; }
             _assembly = new GameObject("Generated geometry").transform;
             _assembly.SetParent(_model.transform, false);
             Bounds bounds = default;
@@ -98,9 +101,14 @@ namespace Zap.Constellation
             transformer.allowTwoHandedScaling = true; transformer.allowOneHandedScaling = false;
             transformer.minimumScaleRatio = .12f; transformer.maximumScaleRatio = 5;
             _grab.AddSingleGrabTransformer(transformer); _grab.AddMultipleGrabTransformer(transformer);
+            BuildPane();
+        }
+
+        private void BuildPane()
+        {
             var pane = new GameObject("Exploration glass pane"); pane.transform.SetParent(transform, false);
             Pane = pane.AddComponent<ExplorationPane>(); Pane.Initialize();
-            LearningText = data.explanation;
+            LearningText = Data.explanation;
             Recenter();
         }
 
@@ -113,7 +121,8 @@ namespace Zap.Constellation
             _model.transform.position = camera.position + forward * 1.35f + Vector3.down * .06f;
             _model.transform.rotation = Quaternion.Euler(0, camera.eulerAngles.y, 0);
             _model.transform.localScale = Vector3.one;
-            _captionOffset = forward * .3f + Vector3.Cross(Vector3.up,forward) * .85f + Vector3.down * .09f;
+            _captionOffset = HasModel ? forward * .3f + Vector3.Cross(Vector3.up,forward) * .85f + Vector3.down * .09f :
+                forward * .2f + Vector3.Cross(Vector3.up,forward) * .65f + Vector3.down * .08f;
             Pane?.Attach();
         }
 
@@ -215,7 +224,7 @@ namespace Zap.Constellation
                     _focused >= 0 ? _parts[_focused].data.name + ": " + _parts[_focused].data.detail : LearningText);
                 string experiment = step != null || string.IsNullOrEmpty(Data.experiment?.label) ? "" :
                     Data.experiment.label + "  " + Mathf.RoundToInt(Parameter * 100) + "%  ·  " + (Parameter < .5f ? Data.experiment.lowLabel : Data.experiment.highLabel);
-                string footer = _requestStatus ?? (_answer != null ? "ANSWER" : step != null ? "DISCOVERY " + (StepIndex+1) + " / " + Data.steps.Length : experiment);
+                string footer = _requestStatus ?? (_answer != null ? "ANSWER" : !HasModel ? "EXPLORE THIS WORLD · HOLD LEFT TRIGGER TO ASK" : step != null ? "DISCOVERY " + (StepIndex+1) + " / " + Data.steps.Length : experiment);
                 Pane.SetContent(title, body, footer, _requestPending, _requestError);
             }
         }

@@ -1,6 +1,6 @@
 # Voice, topic balls and worlds
 
-Current implementation on `zap/build`, 2026-11-14. The designer's skybox and Satie are deferred.
+Current implementation on `zap/build`, 2026-11-14. The designer's skybox and Satie are deferred. The current curated demo and its preparation commands are documented in `relay/demo/README.md`.
 
 ## Run
 
@@ -27,7 +27,7 @@ WORLD_GENERATION_ENABLED=false
 WORLD_TEST_WORLD_ID=<the one existing test world>
 ```
 
-Never put credentials in Unity, Resources, screenshots or commits. The headset sends recordings and note text to the laptop. Speech is transcribed locally with Faster Whisper; text and parent-note context go to OpenAI. Geometry mode loads cached World Labs assets. The optional Orbis experiment sends the world prompt and starting image to Reactor. Audio recordings are held in memory, not saved by the relay. The owner's current budget permits only the existing test world; keep new World Labs generation disabled.
+Never put credentials in Unity, Resources, screenshots or commits. The headset sends recordings and note text to the laptop. Speech is transcribed locally with Faster Whisper; text and parent-note context go to OpenAI. Geometry mode loads cached World Labs assets. The optional Orbis experiment sends the world prompt and starting image to Reactor. Audio recordings are held in memory, not saved by the relay. Keep runtime generation disabled; the owner authorizes individual prepared demo worlds separately.
 
 The local model (`base.en`, configurable with `SPEECH_MODEL`) downloads once. Warm it before a demo:
 
@@ -47,6 +47,7 @@ The judges' page is at `http://localhost:8787/`. Merely opening it does not crea
 | Enter a world | Deliberately throw the ball forward, or press left X with it selected |
 | Cancel unfinished speech / idea | Left Y while recording, transcribing or waiting for an AI response; release the voice button before trying again |
 | Return | Left Y when no voice request is pending |
+| Travel to a linked idea | Parent and child orbs appear to the left inside a world. Select one and press X, or grip and throw it |
 | Move/look inside a world | Left stick accelerates into walking and slides along walls; right stick snap-turns when not pointing at an object |
 | Ask, add or revise an object | Hold left trigger, speak, release. A question produces an explanation; a request for another object adds it; explicit revisions change the selected object |
 | Edit the current world's saved topic | Hold B; if a child ball is selected, B edits that child instead |

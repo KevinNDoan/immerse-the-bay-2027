@@ -1,0 +1,46 @@
+{
+  "id": "great-wall-biology-v1",
+  "title": "Great Wall and Biology Demo",
+  "worlds": [
+    {
+      "id": "demo-great-wall-exterior",
+      "textureProjection": "panorama",
+      "topic": "Great Wall of China",
+      "parentIds": [],
+      "position": {"x": -0.55, "y": 1.4, "z": 1.8},
+      "summary": "Explore the Great Wall's mountain setting, construction and connected watchtowers.",
+      "context": "The Great Wall of China, a historically inspired Ming-era mountain section. Outside, standing at human eye height on a broad, level stone approach terrace immediately beside a monumental rectangular grey-brick watchtower. This is an outdoor place, not inside a building and not an aerial view. The crenellated grey-brick wall winds away across forested mountain ridges to the left and right. The nearby two-storey watchtower has thick masonry, a dark arched entrance, small arched openings and a crenellated roof. Weathered grey stone and brick, realistic masonry joints, soft warm late-afternoon sunlight from the west, pale blue sky and distant atmospheric mountains. The terrace has at least five metres of clear level walking space, with the watchtower a few metres ahead and the wall visible beside it. Photorealistic architectural environment, consistent human scale, detailed surroundings in all directions. No crowds, no close people, no museum exhibits, no giant lettering, no diagrams, no floating learning objects. The linked child world will be the inside of this same style of grey-brick watchtower at the same time of day.",
+      "pane": {
+        "title": "The wall and the landscape",
+        "text": "Look at how the wall follows the mountain ridges. Walls, passes and towers formed a connected frontier defence system. Much of the familiar brick-and-stone wall dates to the Ming period. This is an AI-generated interpretation, not a surveyed reconstruction. Hold left trigger to ask about the architecture or the surrounding landscape."
+      },
+      "planFile": null
+    },
+    {
+      "id": "demo-great-wall-tower",
+      "topic": "Great Wall — Watchtower Interior",
+      "parentIds": ["demo-great-wall-exterior"],
+      "position": {"x": -0.95, "y": 1.05, "z": 2.7},
+      "summary": "Step inside a Great Wall watchtower and examine its thick masonry, openings and views over the mountain approaches.",
+      "context": "Inside a historically inspired Ming-era watchtower on the Great Wall of China. This is the child of the outdoor Great Wall mountain setting: the same weathered grey-brick, two-storey rectangular crenellated tower, the same forested mountain ridges and soft warm late-afternoon sunlight from the west. Human eye-level viewpoint in the centre of a spacious enclosed ground-floor masonry chamber about eight metres wide. Thick detailed grey-brick walls, broad brick arches, a vaulted brick ceiling, a worn but level stone floor and small deep-set arched windows looking out at distant mountain ridges and a glimpse of the Great Wall. A broad arched doorway at the side leads toward the outdoor wall approach. Warm angled daylight falls through the openings, with enough soft indirect light to see the interior clearly. Keep the central five-metre floor area clear and walkable. Photorealistic material detail, believable human scale and consistent depth in every direction. No tourists, no close people, no modern furniture, no museum installation, no text signage, no diagrams or floating artifacts. Stay fully inside the chamber, not on the roof or outside the tower.",
+      "pane": {
+        "title": "Inside a watchtower",
+        "text": "Examine the depth of the window openings and the arches carrying the masonry above them. Towers offered sheltered observation points along the wall; their positions helped people monitor the surrounding terrain. Compare the enclosed space with the open ridge outside. The architecture here is an illustrative reconstruction. Hold left trigger to ask about what you see."
+      },
+      "planFile": null
+    },
+    {
+      "id": "demo-biology-lab",
+      "topic": "Biology Lab — DNA",
+      "parentIds": [],
+      "position": {"x": 0.7, "y": 1.4, "z": 1.9},
+      "summary": "Investigate DNA structure in a bright biology laboratory with an interactive floating model.",
+      "context": "A modern, realistic molecular biology research and learning laboratory in daylight. Human eye-level viewpoint standing in a broad, level, clear central aisle. A spacious room with clean pale floors, white and light-grey laboratory benches arranged around the perimeter, blue cabinet accents, microscopes, pipette racks, small centrifuges, reagent bottles and organized laboratory glassware on distant benches. Tall windows admit soft natural daylight and show greenery outside. Realistic fluorescent ceiling fixtures and natural materials, crisp near-field surfaces and consistent scale. Leave a clear central area at least five metres wide as a haven for a learner to examine a separately rendered floating DNA model; do not generate the DNA model as part of the room. Welcoming, credible research laboratory rather than a futuristic spaceship, clinical operating room, abandoned workshop or museum exhibition. No people, no giant signs, no text overlays, no floating holograms and no baked-in helix or teaching diagram. Fully enclosed room with coherent walls, floor and ceiling in every direction.",
+      "pane": {
+        "title": "Investigate DNA",
+        "text": "DNA stores information in the order of its bases. Two sugar-phosphate backbones form a double helix, joined by complementary base pairs. Grip the floating model to inspect it, zoom with the right stick, and use the trigger to explore its structure. The model is schematic and does not show a real gene sequence. Hold left trigger to ask questions or add another learning object."
+      },
+      "planFile": "dna.json"
+    }
+  ]
+}

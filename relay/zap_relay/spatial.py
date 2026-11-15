@@ -26,6 +26,7 @@ class SpatialPreparation:
         self.root = Path(cache_dir or Path(__file__).resolve().parent.parent / ".cache" / "geometry")
         self.tasks = {}; self.limit = asyncio.Semaphore(1)
         self.demo_plan = None
+        self.collection = None
         self.enabled = settings.mode == "live" and settings.world_provider != "orbis" and (
             settings.world_provider == "worldlabs" or bool(settings.worldlabs_key))
 
@@ -41,6 +42,7 @@ class SpatialPreparation:
         return self.root / key
 
     def status(self, key):
+        if self.collection is not None and not self.collection.contains_key(key): raise FileNotFoundError("World is not in this demo.")
         folder = self._folder(key)
         if not (folder / "status.json").exists(): raise FileNotFoundError("World job not found.")
         result = json.loads((folder / "status.json").read_text())
@@ -53,6 +55,7 @@ class SpatialPreparation:
         temp.write_text(json.dumps(value)); temp.replace(folder / name)
 
     async def prepare(self, payload):
+        if self.collection is not None: return self.collection.prepare(payload, self)
         topic = _text(payload.get("topic"), 160)
         context = _text(payload.get("context", topic), 8000)
         if not topic or not context: raise ValueError("A topic and its context are required.")
@@ -125,13 +128,15 @@ class SpatialPreparation:
             if "http" in detail: detail = "3D preparation failed. Re-enter to resume the saved job."
             self._save(folder, "status.json", {"state": "error", "notice": detail[:400]})
 
-    async def import_assets(self, folder, key):
+    async def import_assets(self, folder, key, texture_projection="atlas"):
         """Also used to import an explicitly requested verification job without regenerating it."""
+        if texture_projection not in ("atlas", "panorama"): raise ValueError("Unsupported surface texture projection.")
         converted = folder / "assets"
         manifest_path = folder / "manifest.json"
-        if manifest_path.exists(): manifest = json.loads(manifest_path.read_text())
-        else:
-            visual = await asyncio.to_thread(convert_glb, folder / "world.glb", converted)
+        manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else None
+        if manifest is None or manifest.get("textureProjection", "atlas") != texture_projection:
+            visual = await asyncio.to_thread(convert_glb, folder / "world.glb", converted,
+                panorama_path=folder / "pano.png" if texture_projection == "panorama" else None)
             collision = await asyncio.to_thread(convert_glb, folder / "collider.glb", converted, "collision", True)
             with Image.open(folder / "pano.png") as image:
                 image.thumbnail((2048,1024)); image.convert("RGB").save(converted / "panorama.jpg", quality=90)
@@ -145,7 +150,7 @@ class SpatialPreparation:
                 ground = float(semantics.get("ground_plane_offset", 0.0))
                 if not .05 <= scale <= 20: raise ValueError("Invalid world metric scale.")
                 if not -20 <= ground <= 20: raise ValueError("Invalid world ground offset.")
-            manifest = {"visual": visual, "collision": collision, "panorama": "panorama.jpg", "metricScale":scale, "groundOffset":ground,
+            manifest = {"visual": visual, "collision": collision, "panorama": "panorama.jpg", "textureProjection":texture_projection, "metricScale":scale, "groundOffset":ground,
                         "ambient": {"r": average[0]/255, "g": average[1]/255, "b": average[2]/255, "a": 1}}
             self._save(folder, "manifest.json", manifest)
         manifest["basePath"] = "/world/assets/" + key + "/"
@@ -155,16 +160,22 @@ class SpatialPreparation:
         return self.status(key)
 
     def asset(self, key, filename):
+        if self.collection is not None and not self.collection.contains_key(key): raise FileNotFoundError("World is not in this demo.")
         if not re.fullmatch(r"(?:visual|collision)-[0-9]+\.(?:mesh|jpg)|panorama\.jpg", filename):
             raise ValueError("Invalid world asset.")
         path = self._folder(key) / "assets" / filename
         if not path.is_file(): raise FileNotFoundError("World asset not found.")
         return path
 
-    def preview(self):
+    def preview(self, node_id=""):
         """Read the existing world's panorama only. Never start a provider operation."""
-        if not self.settings.world_test_world_id: return {"image": ""}
-        folder = self._folder(self.pinned_key)
+        if self.collection is not None:
+            entry = self.collection.entry(node_id)
+            if not entry or not entry.get("cacheKey"): return {"image": ""}
+            folder = self._folder(entry["cacheKey"])
+        else:
+            if not self.settings.world_test_world_id: return {"image": ""}
+            folder = self._folder(self.pinned_key)
         path = folder / "pano.png"
         if not path.exists(): return {"image": ""}
         with Image.open(path) as image:

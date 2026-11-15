@@ -6,6 +6,14 @@ namespace Zap.Constellation
 {
     public static class NodeContext
     {
+        public static NodeData[] Neighbours(NodeData node, IEnumerable<NodeData> nodes)
+        {
+            var parents = new HashSet<string>(node.parentIds ?? System.Array.Empty<string>());
+            return nodes.Where(n => n != null && n.id != node.id && (parents.Contains(n.id) ||
+                (n.parentIds != null && System.Array.IndexOf(n.parentIds,node.id) >= 0)))
+                .GroupBy(n => n.id).Select(group => group.First()).ToArray();
+        }
+
         // Traverse real parent links, not spatial proximity or a global chat history.
         public static NodeData[] Parents(NodeData node, IEnumerable<NodeData> nodes)
         {

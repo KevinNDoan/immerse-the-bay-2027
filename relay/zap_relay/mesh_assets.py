@@ -99,8 +99,35 @@ def matrix(node):
     return result
 
 
-def convert_glb(path, output_dir, prefix="visual", collider=False, marble_frame=True):
+def project_panorama(positions, triangles):
+    """Texture real surfaces from the generated panorama's original viewpoint.
+
+    Split longitude seams so triangles never interpolate across the whole image.
+    This cannot recover the appearance of surfaces hidden from that viewpoint.
+    """
+    radius = np.maximum(np.linalg.norm(positions, axis=1), 1e-8)
+    uv = np.column_stack((np.arctan2(positions[:,0], positions[:,2])/(2*np.pi)+.5,
+                          np.arcsin(np.clip(positions[:,1]/radius, -1, 1))/np.pi+.5))
+    seam = np.ptp(uv[triangles,0], axis=1) > .5
+    crossing = triangles[seam].copy()
+    low = uv[crossing,0] < .5
+    duplicates = np.unique(crossing[low])
+    remap = np.arange(len(positions), dtype=np.uint32)
+    remap[duplicates] = np.arange(len(duplicates), dtype=np.uint32) + len(positions)
+    crossing[low] = remap[crossing[low]]
+    triangles = triangles.copy(); triangles[seam] = crossing
+    extra_uv = uv[duplicates].copy(); extra_uv[:,0] += 1
+    return np.concatenate((positions, positions[duplicates])), np.concatenate((uv, extra_uv)), triangles
+
+
+def convert_glb(path, output_dir, prefix="visual", collider=False, marble_frame=True, panorama_path=None):
     glb = GLB(path); output_dir = Path(output_dir); output_dir.mkdir(parents=True, exist_ok=True)
+    projected_texture = ""
+    if panorama_path is not None and not collider:
+        projected_texture = f"{prefix}-0.jpg"
+        with Image.open(panorama_path) as image:
+            image.thumbnail((4096,2048), Image.Resampling.LANCZOS)
+            image.convert("RGB").save(output_dir / projected_texture, quality=94)
     parts = []; total_triangles = 0
     for index, (primitive, transform) in enumerate(glb.primitives()):
         if index >= 64: raise ValueError("Too many environment primitives.")
@@ -121,18 +148,22 @@ def convert_glb(path, output_dir, prefix="visual", collider=False, marble_frame=
         if total_triangles > (400_000 if collider else 1_500_000):
             raise ValueError("Environment exceeds the Quest triangle budget.")
         uv = np.zeros((len(positions),2), dtype=np.float32)
-        if not collider and "TEXCOORD_0" in attrs:
+        if not collider and not projected_texture and "TEXCOORD_0" in attrs:
             uv = glb.accessor(attrs["TEXCOORD_0"]).astype(np.float32)
             uv[:,1] = 1 - uv[:,1]  # Embedded image origin is top-left in glTF.
         colors = np.ones((len(positions),4), dtype=np.float32)
-        if not collider and "COLOR_0" in attrs:
+        if not collider and not projected_texture and "COLOR_0" in attrs:
             source_colors = glb.accessor(attrs["COLOR_0"])
             colors[:,:source_colors.shape[1]] = source_colors
         material = glb.doc.get("materials", [])[primitive["material"]] if "material" in primitive else {}
         pbr = material.get("pbrMetallicRoughness", {})
-        colors *= pbr.get("baseColorFactor", (1,1,1,1))
+        if not projected_texture: colors *= pbr.get("baseColorFactor", (1,1,1,1))
         texture_name = ""
-        if not collider and "baseColorTexture" in pbr:
+        if projected_texture:
+            positions, uv, triangles = project_panorama(positions, triangles)
+            colors = np.ones((len(positions),4), dtype=np.float32)
+            texture_name = projected_texture
+        elif not collider and "baseColorTexture" in pbr:
             tex = pbr["baseColorTexture"]
             if tex.get("texCoord", 0) != 0 or tex.get("extensions"):
                 raise ValueError("Unsupported environment texture transform.")

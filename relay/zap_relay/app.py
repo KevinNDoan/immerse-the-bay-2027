@@ -322,8 +322,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except FileNotFoundError: raise HTTPException(404, "World job not found.") from None
 
     @app.get("/world/preview")
-    async def world_preview() -> dict:
-        return await asyncio.to_thread(spatial.preview)
+    async def world_preview(nodeId: str = "") -> dict:
+        return await asyncio.to_thread(spatial.preview, nodeId)
 
     @app.get("/world/assets/{key}/{filename}")
     async def world_asset(key: str, filename: str):

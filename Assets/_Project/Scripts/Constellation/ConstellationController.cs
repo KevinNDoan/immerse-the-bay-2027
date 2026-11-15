@@ -1205,8 +1205,11 @@ namespace Zap.Constellation
         private void UpdateHud()
         {
             if (_card == null) return;
-            _card.Visible = ShowControlsCard;
-            if (!ShowControlsCard) return;
+            // In a world this is an on-demand voice/status card, not a permanent hand HUD.
+            // Answers and request progress already live on the movable learning pane.
+            bool visible = ShowControlsCard && (!WorldActive || _input.AskHeld);
+            _card.Visible = visible;
+            if (!visible) return;
             bool tutorial = _onboarding != null && _onboarding.Running && !WorldActive && !CanCancelVoice;
             string title = tutorial ? _onboarding.Title : (_worldVisible ? _worldNode?.Data.topic : (Current != null ? Current.Data.topic : "ZAP!"));
             string hint = tutorial ? TutorialHint : (_worldVisible ? WorldHint : VoidHint);

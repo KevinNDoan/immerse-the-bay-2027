@@ -1,7 +1,9 @@
 using System;
 using System.IO;
+using TMPro;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.TextCore.LowLevel;
 using Zap.Core;
 
 namespace Zap.EditorTools
@@ -64,6 +66,70 @@ namespace Zap.EditorTools
             {
                 EditorUtility.SetDirty(theme);
                 AssetDatabase.SaveAssetIfDirty(theme);
+            }
+            return changed;
+        }
+
+        public const string FontFolder = "Assets/_Project/Art/Fonts/";
+        private static readonly string[] FontWeights = { "Regular", "SemiBold" };
+
+        [MenuItem("ZAP/Build Font Assets")]
+        public static void BuildFontAssetsMenu() => BuildFontAssets(false);
+
+        /// <summary>
+        /// Makes a dynamic TextMeshPro font asset for each Bricolage Grotesque weight the app uses,
+        /// then sets the Regular one as the theme font. Returns true if anything changed.
+        /// </summary>
+        public static bool BuildFontAssets(bool onlyMissing)
+        {
+            bool changed = false;
+            TMP_FontAsset regular = null;
+            foreach (var weight in FontWeights)
+            {
+                string fontPath = FontFolder + "BricolageGrotesque-" + weight + ".ttf";
+                string assetPath = FontFolder + "BricolageGrotesque-" + weight + " SDF.asset";
+                var existing = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(assetPath);
+                if (existing != null && onlyMissing)
+                {
+                    if (weight == "Regular") regular = existing;
+                    continue;
+                }
+                var font = AssetDatabase.LoadAssetAtPath<Font>(fontPath);
+                if (font == null) { Debug.LogWarning($"ZAP: font file missing at {fontPath}."); continue; }
+                if (existing != null) AssetDatabase.DeleteAsset(assetPath);
+
+                var asset = TMP_FontAsset.CreateFontAsset(font, 90, 9, GlyphRenderMode.SDFAA, 1024, 1024,
+                    AtlasPopulationMode.Dynamic, true);
+                if (asset == null) { Debug.LogError($"ZAP: could not create a font asset from {fontPath}."); continue; }
+                asset.name = "BricolageGrotesque-" + weight + " SDF";
+                // Pre-fill the characters the app shows most, so the first frame does not stall.
+                asset.TryAddCharacters(" !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~·—–’“”…●", out _);
+
+                AssetDatabase.CreateAsset(asset, assetPath);
+                for (int i = 0; i < asset.atlasTextures.Length; i++)
+                {
+                    var atlas = asset.atlasTextures[i];
+                    if (atlas == null) continue;
+                    atlas.name = asset.name + " Atlas" + (i > 0 ? " " + i : "");
+                    AssetDatabase.AddObjectToAsset(atlas, asset);
+                }
+                asset.material.name = asset.name + " Material";
+                AssetDatabase.AddObjectToAsset(asset.material, asset);
+                EditorUtility.SetDirty(asset);
+                AssetDatabase.SaveAssetIfDirty(asset);
+                Debug.Log($"ZAP: font asset created at {assetPath}.");
+                if (weight == "Regular") regular = asset;
+                changed = true;
+            }
+
+            var theme = AssetDatabase.LoadAssetAtPath<ZapTheme>(ThemeAssetPath);
+            if (theme != null && regular != null && theme.font != regular)
+            {
+                theme.font = regular;
+                EditorUtility.SetDirty(theme);
+                AssetDatabase.SaveAssetIfDirty(theme);
+                Debug.Log("ZAP: theme font set to Bricolage Grotesque Regular.");
+                changed = true;
             }
             return changed;
         }

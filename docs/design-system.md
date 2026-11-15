@@ -40,7 +40,7 @@ It is for one person studying alone. The name sets the tone: quick, playful, ele
 These come from the product decisions and from what is comfortable in a headset.
 
 **Look**
-- White on black. No colour yet. Colour will be added later, so don't rely on it to carry meaning.
+- Colour is used only in the logo and app icon so far (see "Brand colours" in section 4). In-world pieces stay ink and white, so don't rely on colour to carry meaning.
 - The void is a very dark purple-black, not pure black.
 - Tone is playful and electric: snappy, bright, a little cheeky. Not calm, not corporate, not sci-fi-serious.
 
@@ -93,9 +93,24 @@ Pieces that sit further away need physically larger text to look the same size, 
 | Ink | `#0B0814` | Text on the sticky note |
 | Ink 60% | | Secondary text on the sticky note |
 
+#### Brand colours (logo and app icon)
+
+Chosen 2026-11-15. The palette is inspired by the Louis Vuitton VIA case-study site: silver framing with one electric accent. In the Figma file these are the `brand/*` variables in the "ZAP colour" collection, and the logo layers are bound to them.
+
+| Name | Value | Used for |
+|---|---|---|
+| Lightning yellow | `#FFD60A` | Logo letters and the app-icon bolt |
+| Logo ink | `#14121C` | Logo colour channel, offset up-left |
+| Logo rose | `#E0517E` | Logo colour channel, offset down-right |
+| Screen silver | `#DADEE3` | App-icon background |
+
 ### Type
 
-The project has **Inter Regular** ready to use. If you want other weights, or a second typeface for topics or the wordmark, choose one with a free licence (SIL Open Font License) and send the font files with your handoff.
+**Bricolage Grotesque** is the typeface for all text: topics, summaries, labels, messages, controls and titles. It is free under the SIL Open Font License. Use Regular, Medium, SemiBold, Bold and ExtraBold. It has no italics, so don't use italic.
+
+The ZAP! wordmark and app icon are the only exception. They keep their own lettering and do not use Bricolage Grotesque.
+
+All text styles in the Figma file (Caption, Body, Topic, Title and the three "Far/" styles) use Bricolage Grotesque since 2026-11-15. The Unity project still uses Inter until the Bricolage Grotesque font files are added to `Assets/_Project/Art/Fonts/` and a TextMeshPro font asset is made from them and set as the theme's `font`.
 
 Sizes are in Figma px for pieces at arm's length.
 
@@ -280,6 +295,16 @@ Short notices that appear in front of the user, in either space.
 - The ZAP! wordmark, for the moment the app starts and for the pitch.
 - A square app icon, 512 × 512 px.
 
+**Final, 2026-11-15** (Figma, Wordmark page: the `wordmark` and `app_icon` components; the exploration boards sit beside them).
+
+- **Wordmark:** "ZAP" in Gabarito Black, with Z, A and P on bouncing baselines and tight spacing. A tilted lightning bolt is the "!".
+  - The letters are lightning yellow.
+  - An ink copy is offset 9 px left and 3 px up, and a rose copy 8 px right and 4 px down: a "channel split" like a TV picture out of register.
+  - White scanlines at 40% run over the letters only.
+  - The background is transparent. Flat colour only: no gradients, glow or sparkles.
+- **App icon:** the bolt alone, with the same yellow, ink and rose split, on screen silver with faint yellow and blue-grey scanlines. Corners are square; the platform rounds them.
+- **Logo type:** Gabarito (SIL Open Font License) is used only for the logo. The letters are outlined in the file, so no font file ships for it.
+
 ## 6. Motion direction
 
 The developers build the motion. These notes describe the feeling to aim for, so the images you make suit it. If you have a clear picture of any of these, a short sketch or reference video helps a lot.
@@ -414,8 +439,8 @@ Sizes are relative to a 256 px state frame (the glow at 100%).
 | `marker_track.png`, `marker_fill.png` | 960 × 960 | 240 | Ring track, and the ring that fills over two seconds (radial fill in Unity) |
 | `marker_pill.png` | 1920 × 320 | 480 × 80 | Pill for spoken requests (live text) |
 | `message_working.png`, `message_problem.png` | 1200 × 200 | 600 × 100 | Message backgrounds with icon; live text goes to the right of the icon |
-| `wordmark.png` | 1600 × 600 | 800 × 300 | ZAP! wordmark, exported at 2× |
-| `app_icon.png` | 2048 × 2048 | 512 | App icon |
+| `wordmark.png` | 1600 × 600 | 800 × 300 | ZAP! wordmark, exported at 2×, transparent. Final yellow channel-split version (see 5.12) |
+| `app_icon.png` | 2048 × 2048 | 512 | App icon: yellow bolt on silver (see 5.12) |
 
 ### Stretching pieces (use as 9-slice sprites)
 

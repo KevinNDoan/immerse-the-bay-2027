@@ -43,6 +43,10 @@ namespace Zap.EditorTools
         {
             if (imported.Any(IsArt))
                 EditorApplication.delayCall += () => ZapThemeAssetBuilder.FillImages(true);
+            // Only the .ttf files trigger this, so the font assets it creates do not loop back here.
+            if (imported.Any(p => p.StartsWith(ZapThemeAssetBuilder.FontFolder, StringComparison.Ordinal)
+                                  && p.EndsWith(".ttf", StringComparison.OrdinalIgnoreCase)))
+                EditorApplication.delayCall += () => ZapThemeAssetBuilder.BuildFontAssets(true);
         }
     }
 }

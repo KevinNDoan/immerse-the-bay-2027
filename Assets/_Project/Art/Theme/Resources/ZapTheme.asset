@@ -28,10 +28,28 @@ MonoBehaviour:
   summaryShowDistance: 0.85
   noteHideDistance: 4
   lineWidth: 0.0025
-  controlsCardSize: {x: 0.5, y: 0.32}
-  controlsTextSizeMin: 0.22
-  controlsTextSizeMax: 0.35
-  controlsMinDistanceFromFace: 0.6
+  suggestedNodeDiameter: 0.06
+  suggestedDistance: 0.24
+  suggestedColor: {r: 0.4, g: 0.4, b: 0.4, a: 1}
+  suggestedTextSize: 0.2
+  suggestedTextColor: {r: 1, g: 1, b: 1, a: 0.7}
+  controlsDistance: 1.2
+  controlsDropBelowEyes: 0.1
+  cardSize: {x: 0.56, y: 0.41}
+  cardCompactSize: {x: 0.56, y: 0.31}
+  cardPadding: 0.03
+  cardTitleSize: 0.4
+  cardStepSize: 0.34
+  cardStatusSize: 0.32
+  cardHintSize: 0.24
+  hintTextSize: 0.12
+  hintLineWidth: 0.0015
+  cardColor: {r: 0.078, g: 0.051, b: 0.149, a: 0.9}
+  cardOutlineColor: {r: 0.25, g: 0.24, b: 0.29, a: 1}
+  cardOutlineWidth: 0.004
+  cardTextColor: {r: 0.83, g: 0.82, b: 0.86, a: 1}
+  cardDimTextColor: {r: 0.83, g: 0.82, b: 0.86, a: 0.6}
+  hintHighlightColor: {r: 1, g: 1, b: 1, a: 1}
   starCoreDiameter: 0.032
   starGlowScale: 4
   starRingScale: 2
@@ -55,4 +73,4 @@ MonoBehaviour:
   noteBackgroundPointed: {fileID: 2800000, guid: 8d527fc02abca174f9c668d06b3742ff, type: 3}
   noteBackgroundHeld: {fileID: 2800000, guid: 6e5d3c028c4511f4fa1b87075ffdda90, type: 3}
   noteExpanded: {fileID: 2800000, guid: 72454466a8ba3a945a90bc186bf16983, type: 3}
-  font: {fileID: 0}
+  font: {fileID: 11400000, guid: 5a5eeb637cd84794086ceabe6633f207, type: 2}

@@ -1,5 +1,7 @@
 # ZAP! planning doc
 
+**Remaining worlds funded (2026-11-14, 21:16 PST):** Two additional 7,000-credit keys are authorized for the pending watchtower and biology lab. Finish this explicit three-world demo without starting any extra worlds. Runtime world generation is asynchronous; the collection demo remains locked to prepared assets. A new spoken request through to completed textured geometry on the worn Quest is not yet verified end to end.
+
 **Current demo refresh (2026-11-14, later evening):** Build a fresh collection with Great Wall exterior → watchtower interior and an independent DNA biology lab. All worlds have movable panes; the Great Wall worlds initially have no artifact. The owner authorized these three new worlds, then directed us to finish the exterior with the supplied 7,000-credit account and wait for another key for the other two. The prior single-world limit is superseded for this explicit collection only. No automatic environment generation is authorized outside it. Topic-specific choices belong in demo data, not runtime routing code.
 
 **Pane feedback (2026-11-14, evening):** Explanations belong on movable glass panes. The left-hand display should provide controls and brief status rather than duplicate learning content. Requests need visible progress/errors, answers must remain with the intended object, and an unfinished new idea must be cancellable. Pane placement should persist with the idea's exploration objects. The saved-world budget remains unchanged.

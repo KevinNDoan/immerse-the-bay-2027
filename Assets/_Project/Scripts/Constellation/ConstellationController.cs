@@ -34,6 +34,10 @@ namespace Zap.Constellation
         private GeneratedEnvironment _environment;
         private WorldJourney _journey;
         private TopicBall _branchSelection;
+        // X follows the orb the user is actually pointing at or holding, not a stale hover.
+        private TopicBall LinkedTravelTarget => _branchSelection != null && _branchPositions.ContainsKey(_branchSelection) &&
+            _branchSelection.gameObject.activeInHierarchy && (_branchSelection.Grab.isSelected || _branchSelection.Grab.isHovered)
+                ? _branchSelection : null;
         private float _loadingStarted;
         private bool InWorld => (_environment != null && _environment.IsVisible) || (_world != null && _world.IsEntered);
         private bool WorldReady => (_environment != null && _environment.IsVisible) || (_world != null && _world.State == "streaming");
@@ -210,7 +214,10 @@ namespace Zap.Constellation
             ball.Grabbed += RequestPreview;
             _balls.Add(ball);
             if (branch)
+            {
                 _branchPositions[ball] = _worldNode.Data.position + new Vector3(.5f + _branchPositions.Count * .25f, -.2f, 0);
+                ball.SetWorldTravelHint(true);
+            }
             _dirty = true;
             Select(ball);
             RequestPreview(ball);
@@ -546,7 +553,7 @@ namespace Zap.Constellation
                 ball.transform.SetParent(_branches,true);
                 ball.transform.position = head.position + forward * (1.4f + index/3*.35f) - right * 1.05f + Vector3.down * (.1f + index%3*.3f);
                 ball.Body.linearVelocity = Vector3.zero; ball.Body.angularVelocity = Vector3.zero;
-                ball.SetSelected(false); index++;
+                ball.SetSelected(false); ball.SetWorldTravelHint(true); index++;
             }
         }
 
@@ -621,6 +628,7 @@ namespace Zap.Constellation
                 branch.Key.transform.SetParent(_content, true);
                 branch.Key.transform.position = branch.Value;
                 branch.Key.Body.linearVelocity = Vector3.zero; branch.Key.Body.angularVelocity = Vector3.zero;
+                branch.Key.SetWorldTravelHint(false);
             }
             _branchPositions.Clear(); _branchSelection = null;
             if (_voidStars != null) _voidStars.SetActive(true);
@@ -645,7 +653,8 @@ namespace Zap.Constellation
             }
             // Voice and network requests must not freeze local navigation.
             _navigation.Tick(_input.Move, look, WorldReady, SendSteer);
-            if (_input.EnterDown && _branchSelection != null) { EnterWorld(_branchSelection); return; }
+            var destination = LinkedTravelTarget;
+            if (_input.EnterDown && destination != null) { EnterWorld(destination); return; }
             if (_input.EnterDown && _study != null) { _space.SetCurrent(_study); _study.Recenter(); SetStatus("Object and pane brought in front of you."); }
             if (_input.PauseDown && _study != null) { _study.ToggleAnimation(); SetStatus("Object animation toggled."); }
             if (_input.ViewDown && _study != null) { _space.SetCurrent(_study); _study.ResetExploration(); SetStatus("Exploration reset; your objects are kept."); }
@@ -777,6 +786,8 @@ namespace Zap.Constellation
             _hud.transform.rotation = Quaternion.LookRotation(_hud.transform.position - Camera.main.transform.position);
             string title = _worldVisible ? _worldNode?.Data.topic : (Current != null ? Current.Data.topic : "ZAP!");
             string controls = _worldVisible ? "A: new idea · B: edit idea · Left trigger: ask / create\nGrip: move object / pane · Right stick: zoom / experiment\nLeft stick: walk · Y: map" : "A: new topic · B: edit selected\nGrip: grab · Throw: travel · X: enter";
+            if (_worldVisible && _branchPositions.Count > 0)
+                controls += LinkedTravelTarget != null ? "\nX: enter " + LinkedTravelTarget.Data.topic : "\nPoint at a linked orb + X: travel";
             if (CanCancelVoice) controls = "Y: cancel this request\n" + (_voice.IsRecording || _voice.IsStarting ? "Release the voice button to send.\n" : "") + "You can still move and look around.";
             string progress = Travelling ? "\n" + Mathf.FloorToInt(_journey.Elapsed) + "s elapsed · Y returns" : "";
             _hud.text = title + "\n\n" + (_voice.IsRecording ? "● Listening " + new string('|', Mathf.Clamp(Mathf.RoundToInt(_voice.Level * 150), 1, 12)) : Status + progress)

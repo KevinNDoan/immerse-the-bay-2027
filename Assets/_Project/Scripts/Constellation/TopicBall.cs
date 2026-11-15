@@ -21,6 +21,7 @@ namespace Zap.Constellation
         private TextMeshPro _note;
         private Transform _orb;
         private bool _selected;
+        public bool HasWorldTravelHint { get; private set; }
         private float _heldSince;
         private int _releaseVersion;
         private float _scale = .15f;
@@ -65,6 +66,11 @@ namespace Zap.Constellation
         }
 
         public void SetSelected(bool value) { _selected = value; }
+        public void SetWorldTravelHint(bool value)
+        {
+            HasWorldTravelHint = value;
+            _note.rectTransform.sizeDelta = value ? new Vector2(.72f,.48f) : new Vector2(.62f,.35f);
+        }
         public void SetDraft(bool draft)
         {
             Grab.enabled = !draft;
@@ -140,7 +146,8 @@ namespace Zap.Constellation
             _note.transform.rotation = Quaternion.LookRotation(_note.transform.position - camera.transform.position);
             bool showSummary = (Grab.isSelected || (_selected && distance < .85f)) && !string.IsNullOrEmpty(Data.summary);
             _note.text = showSummary ? Data.topic + "\n" + Data.summary : Data.topic;
-            _note.fontSize = showSummary ? .24f : .38f;
+            if (HasWorldTravelHint) _note.text += "\nPoint + X to enter · or grip and throw";
+            _note.fontSize = showSummary || HasWorldTravelHint ? .24f : .38f;
             _note.gameObject.SetActive(distance < 4);
         }
     }

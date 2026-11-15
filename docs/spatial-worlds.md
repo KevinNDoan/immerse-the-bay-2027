@@ -23,6 +23,12 @@ The pinned world is a test environment, not a topic keyword preset. Every reques
 
 ## HTTP extension
 
+Runtime generation is implemented as an asynchronous job, not real-time creation. In general generation mode, entering a node calls `/world/prepare`; the relay submits generation, polls the operation, requests an HQ mesh export, downloads/converts its assets, and Unity loads them without an APK rebuild. The current collection runner intentionally bypasses that path and rejects unprepared nodes. Adding keys alone does not enable it: the collection runner, the default-world pin and the generation flag are separate controls.
+
+The exterior's HQ export took about 34 minutes, after world generation. Unity currently returns from a pending journey after 240 seconds; the server continues, and re-entering checks the saved job. The provider adapter waits up to 4,200 seconds per stage. Leaving the client journey does not cancel or refund an already-submitted provider job. Cached revisits and AI questions do not repeat environment generation.
+
+Generation/export, local conversion, desktop loading/walking and live AI answers have been exercised. The complete path from a new spoken topic to a new completed world on a worn Quest has not been verified end to end. Generated textures also require visual QA: the exterior needed the explicit panorama projection repair described above, which is not automatically selected by the general live path.
+
 The existing socket protocol remains available for the Orbis experiment. The following HTTP routes support geometry without sending provider credentials or signed asset URLs to Unity:
 
 | Route | Behavior |

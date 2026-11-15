@@ -6,6 +6,7 @@ import base64
 import hashlib
 import io
 import json
+import os
 import re
 from pathlib import Path
 
@@ -54,6 +55,24 @@ class SpatialPreparation:
         temp = folder / (name + ".tmp")
         temp.write_text(json.dumps(value)); temp.replace(folder / name)
 
+    async def _prepare_plan(self, folder, topic, context, **kwargs):
+        """A learning object is optional; an unavailable planner must not strand a paid world."""
+        path = folder / "plan.json"
+        try:
+            plan = json.loads(path.read_text()) if path.exists() else await self.study.plan(topic, context, **kwargs)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # Provider errors can contain credentials or URLs. Keep only a fixed, useful fallback.
+            plan = None
+        self._save(folder, "plan.json", plan)
+        pane = None
+        if plan is None:
+            pane = {"title": topic, "text": "Your exploration space is ready. The initial learning object could not be prepared. "
+                    "Look around, or hold left trigger to ask a question or wish an object into creation."}
+            self._save(folder, "pane.json", pane)
+        return plan, pane
+
     async def prepare(self, payload):
         if self.collection is not None: return self.collection.prepare(payload, self)
         topic = _text(payload.get("topic"), 160)
@@ -77,9 +96,27 @@ class SpatialPreparation:
         def progress(text): self._save(folder, "status.json", {"state": "preparing", "notice": text})
         async def operation(name, create):
             path = folder / name
-            if path.exists(): value = json.loads(path.read_text())
+            uncertain = "A World Labs submission has an uncertain outcome. Check the saved operation with the provider before retrying; no duplicate request was sent."
+            if path.exists():
+                try: value = json.loads(path.read_text())
+                except (OSError, ValueError): raise RuntimeError(uncertain) from None
+                if not isinstance(value, dict) or not value.get("operation_id"):
+                    raise RuntimeError(uncertain)
             else:
-                value = await create(); self._save(folder, name, value)
+                # Persist intent before spending, including across cancellation or process failure.
+                # Never repeat an ambiguous POST simply because its response was lost.
+                try:
+                    with path.open("x") as journal:
+                        json.dump({"state": "submitting"}, journal)
+                        journal.flush(); os.fsync(journal.fileno())
+                    value = await create()
+                    if not isinstance(value, dict) or not value.get("operation_id"):
+                        raise RuntimeError(uncertain)
+                    self._save(folder, name, value)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    raise RuntimeError(uncertain) from None
             return await self.api.wait(value)
         try:
             async with self.limit:
@@ -89,13 +126,13 @@ class SpatialPreparation:
                         raise RuntimeError("The single test world's textured mesh is still being prepared. Re-enter when the export is ready.")
                     manifest = json.loads((shared / "manifest.json").read_text())
                     manifest["basePath"] = "/world/assets/" + self.pinned_key + "/"
-                    if (folder / "plan.json").exists(): plan = json.loads((folder / "plan.json").read_text())
-                    else:
-                        preview = await asyncio.to_thread(self.preview)
-                        plan = await self.study.plan(topic, context, environment_image=preview.get("image", ""))
-                        self._save(folder, "plan.json", plan)
+                    preview = {"image": ""}
+                    if not (folder / "plan.json").exists():
+                        try: preview = await asyncio.to_thread(self.preview)
+                        except (OSError, ValueError): pass
+                    plan, pane = await self._prepare_plan(folder, topic, context, environment_image=preview.get("image", ""))
                     self._save(folder, "status.json", {"state":"ready", "notice":"Ready in the saved test world.",
-                        "environment":manifest, "plan":plan})
+                        "environment":manifest, "plan":plan, "pane":pane})
                     return
                 if not self.settings.world_generation_enabled:
                     raise RuntimeError("New World Labs generation is disabled. Choose the saved test world.")
@@ -113,9 +150,7 @@ class SpatialPreparation:
                                   ("pano.png", (assets.get("imagery") or {}).get("pano_url"))):
                     if not url: raise RuntimeError("World Labs did not provide the required environment assets.")
                     if not (folder / name).exists(): await download_asset(url, folder / name)
-                if not (folder / "plan.json").exists():
-                    plan = await self.study.plan(topic, context)
-                    self._save(folder, "plan.json", plan)
+                await self._prepare_plan(folder, topic, context)
                 progress("Building the textured 3D surfaces. The provider can take up to an hour; Y returns while it builds.")
                 result = await operation("export.json", lambda: self.api.export(world_id))
                 if not (folder / "world.glb").exists(): await download_asset(result["url"], folder / "world.glb")
@@ -155,8 +190,9 @@ class SpatialPreparation:
             self._save(folder, "manifest.json", manifest)
         manifest["basePath"] = "/world/assets/" + key + "/"
         plan = json.loads((folder / "plan.json").read_text()) if (folder / "plan.json").exists() else None
+        pane = json.loads((folder / "pane.json").read_text()) if (folder / "pane.json").exists() else None
         self._save(folder, "status.json", {"state": "ready", "notice": "3D environment ready.",
-            "environment": manifest, "plan": plan})
+            "environment": manifest, "plan": plan, "pane": pane})
         return self.status(key)
 
     def asset(self, key, filename):

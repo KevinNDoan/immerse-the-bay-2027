@@ -14,7 +14,7 @@ The exterior's exported atlas had severe speckling in the actual Unity render. I
 
 ## Budget and preparation
 
-The owner's latest instruction is to finish the exterior first using the supplied 7,000-credit account, then wait for another API key. Generation and its HQ textured export cost 5,080 credits; the remaining 1,920 do not cover another complete world. Do not use them on an incomplete second world. The tower and lab stay pending until funded.
+The exterior is complete. The owner subsequently supplied two additional funded keys and authorized finishing the tower and lab, one complete world per key. Each new account started at 7,000 credits. Generation and its HQ textured export cost 5,080 credits; the remaining 1,920 on each account must not be spent on incomplete extra worlds. This authorizes only the requested three-world collection.
 
 Automatic generation remains disabled in `.env` and in the collection server. `probe_worldlabs.py --authorize-generation` is an explicit one-world operation; it accepts `--key-env WORLD_LABS_API_KEY_2` for another credential kept only in the ignored root `.env`. This does not enable generation in the app. The probe journals each paid submission and resumes operation IDs rather than starting duplicates. A `submitting` record without an operation ID must be reconciled with the provider before retrying.
 

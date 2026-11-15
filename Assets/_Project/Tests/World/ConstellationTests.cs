@@ -168,6 +168,32 @@ namespace Zap.World.Tests
         }
 
         [UnityTest]
+        public IEnumerator ControlsCardBuildsAndSwitchesLayout()
+        {
+            var parent = new GameObject("Test controls card parent");
+            try
+            {
+                var card = ControlsCard.Create(parent.transform);
+                yield return null;
+
+                card.Show("Volcanoes", "Listening…", false, true, .5f, false);
+                Assert.IsFalse(card.IsCompact);
+
+                card.Show("Volcanoes", "Opening…", true, false, 0f, true);
+                Assert.IsTrue(card.IsCompact);
+
+                card.Visible = false;
+                Assert.IsFalse(card.gameObject.activeSelf);
+                card.Visible = true;
+                Assert.IsTrue(card.gameObject.activeSelf);
+            }
+            finally
+            {
+                Object.Destroy(parent);
+            }
+        }
+
+        [UnityTest]
         public IEnumerator GrabReleaseTransfersThrowVelocityAndBallFloats()
         {
             var managerObject = new GameObject("Test interaction manager");

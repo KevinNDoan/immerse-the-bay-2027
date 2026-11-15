@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text;
-using TMPro;
 using UnityEngine;
 using UnityEngine.Networking;
 using UnityEngine.SceneManagement;
@@ -18,7 +17,7 @@ namespace Zap.Constellation
     {
         public TopicBall Current { get; private set; }
         public IReadOnlyList<TopicBall> Balls => _balls;
-        public string Status { get; private set; } = "Hold A and say a topic. Release to write it on a ball.";
+        public string Status { get; private set; } = "Hold A and say a topic. Let go to create it.";
         public bool Busy => _busy;
         public bool InWorld => _worldVisible;
         public bool IsListening => _voice != null && (_voice.IsRecording || _voice.IsStarting);
@@ -34,8 +33,7 @@ namespace Zap.Constellation
         private WorldControls _worldControls;
         private Transform _left, _right, _content;
         private Material _material, _lineMaterial;
-        private TextMeshPro _hud;
-        private int _hudFrame;
+        private ControlsCard _card;
         private TopicBall _voiceTarget, _worldNode, _lineStart;
         private string _voiceAction;
         private string _savePath;
@@ -87,7 +85,7 @@ namespace Zap.Constellation
                 _voiceAction = _input.EditHeld ? "edit" : (_world.IsEntered ? "steer" : "create");
                 _voiceTarget = _world.IsEntered ? _worldNode : Current;
                 if (_world.IsEntered && _world.State != "streaming") SetStatus("Wait for this world to open before speaking.");
-                else if (_voiceAction == "edit" && _voiceTarget == null) SetStatus(ZapPlatform.IsDesktop ? "Select a topic before holding B to edit it." : "Point at or grab a ball before holding B to edit.");
+                else if (_voiceAction == "edit" && _voiceTarget == null) SetStatus(ZapPlatform.IsDesktop ? "Select a topic before holding B to edit it." : "Point at or grab a topic, then hold B to edit it.");
                 else
                 {
                     _recordStart = Time.unscaledTime;
@@ -139,7 +137,7 @@ namespace Zap.Constellation
         public void SubmitText(string text, bool edit)
         {
             if (_busy || _voice.IsRecording) return;
-            if (edit && Current == null) { SetStatus("Select a ball first."); return; }
+            if (edit && Current == null) { SetStatus("Select a topic first."); return; }
             StartCoroutine(ApplyText(text, edit ? "edit" : (_world.IsEntered ? "steer" : "create"), _world.IsEntered ? _worldNode : Current));
         }
 
@@ -165,7 +163,7 @@ namespace Zap.Constellation
                 _busy = false;
                 yield break;
             }
-            if (action == "edit" && target == null) { SetStatus("That ball is no longer available."); _busy = false; yield break; }
+            if (action == "edit" && target == null) { SetStatus("That topic is no longer available."); _busy = false; yield break; }
             SetStatus((action == "edit" ? "Editing: " : "Writing: ") + text);
             // Saved world images do not belong in a text-edit request.
             var request = new NodeRequest { action = action, text = text, node = target != null
@@ -469,35 +467,15 @@ namespace Zap.Constellation
         }
         private void BuildHud()
         {
-            var obj = new GameObject("ZAP controls"); obj.transform.SetParent(transform, false);
-            _hud = obj.AddComponent<TextMeshPro>(); _hud.richText = false;
-            _hud.enableAutoSizing = true;
-            _hud.overflowMode = TextOverflowModes.Ellipsis;
-            obj.SetActive(ShowControlsCard);
-            obj.transform.position = new Vector3(0f, 1.2f, ZapTheme.Current.controlsDistance);
-            obj.transform.rotation = Quaternion.identity;
+            _card = ControlsCard.Create(transform);
         }
         private void UpdateHud()
         {
-            if (_hud != null && _hud.gameObject.activeSelf != ShowControlsCard) _hud.gameObject.SetActive(ShowControlsCard);
+            if (_card == null) return;
+            _card.Visible = ShowControlsCard;
             if (!ShowControlsCard) return;
-            if (_hud == null || Camera.main == null) return;
-            var theme = ZapTheme.Current;
-            _hud.rectTransform.sizeDelta = theme.controlsCardSize;
-            _hud.fontSizeMin = theme.controlsTextSizeMin;
-            _hud.fontSizeMax = theme.controlsTextSizeMax;
-            _hud.color = theme.textColor;
-            if (theme.font != null) _hud.font = theme.font;
-            if (HomeFrame.Version != _hudFrame)
-            {
-                _hud.transform.position = new Vector3(0f, HomeFrame.HeadHeight - theme.controlsDropBelowEyes, theme.controlsDistance);
-                _hud.transform.rotation = Quaternion.identity;
-                _hudFrame = HomeFrame.Version;
-            }
             string title = _worldVisible ? _worldNode?.Data.topic : (Current != null ? Current.Data.topic : "ZAP!");
-            string controls = _worldVisible ? "Sticks: move / look · A: steer by voice\nB: edit this topic · Trigger: event · Y: return" : "A: new topic · B: edit selected\nGrip: grab / throw · X: enter world\nTrigger: link two balls · sweep a line to cut";
-            _hud.text = title + "\n\n" + (_voice.IsRecording ? "● Listening " + new string('|', Mathf.Clamp(Mathf.RoundToInt(_voice.Level * 150), 1, 12)) : Status)
-                + "\n\n" + controls;
+            _card.Show(title, Status, _worldVisible, _voice.IsRecording, _voice.Level, _busy);
         }
         public void SetStatus(string text) { Status = text; }
         public void Save()
@@ -532,6 +510,8 @@ namespace Zap.Constellation
         }
         private void OnApplicationPause(bool paused) { if (paused) { if (_world != null && _world.IsEntered) LeaveWorld(); Save(); } }
         private void OnApplicationQuit() { Save(); }
+        // Update no longer runs while disabled, so release the hold or the home frame could never re-align.
+        private void OnDisable() { HomeFrame.Hold = false; }
         private void OnDestroy()
         {
             HomeFrame.Hold = false;

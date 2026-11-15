@@ -359,3 +359,74 @@ Assets/_Project/Art/Fonts/   any font files you add
 4. **Typeface:** is Inter right for a playful, electric product, or should topics and the wordmark use something with more character?
 5. **The bolt:** how cartoonish should the lightning be?
 6. **Anything missing?** If a moment in the session in section 1 has no piece listed, tell us.
+
+## 10. Delivered from Figma
+
+Updated 2026-11-14. Source: the "ZAP! UI" Figma file, page "Export (Unity files)". Every piece in section 5 has a page there, with one component variant per state.
+
+All 59 images are exported with the export settings saved in Figma (4×, or smaller where 4× would pass 2048 px). They are PNGs with transparent backgrounds, and no live text is baked in. The only baked-in text is on the two controls cards, which section 2 allows.
+
+### `Assets/_Project/Art/FX/` (white on transparent; set brightness in Unity)
+
+| File | Pixels | Figma px | Use |
+|---|---|---|---|
+| `star_core.png` | 256 × 256 | 64 | Star core, round dot |
+| `star_glow.png` | 1024 × 1024 | 256 | Soft glow behind the core, all states |
+| `star_ring.png` | 512 × 512 | 128 | Pointed-at ring |
+| `star_ring_dashed.png` | 512 × 512 | 128 | Suggested ring |
+| `star_sparkle.png` | 256 × 256 | 64 | Single twinkle |
+| `star_sparks.png` | 512 × 512 | 128 | Grabbed spark burst |
+| `star_orbit.png` | 1024 × 1024 | 256 | Visited mark: tilted orbit ring with a moon |
+| `line_soft.png` | 256 × 64 | 64 × 16 | Settled line; repeats along its length |
+| `line_dash.png` | 256 × 64 | 64 × 16 | Suggested line; repeats |
+| `line_spark.png` | 256 × 256 | 64 | Spark when a line is drawn or cut |
+| `line_bolt_01..03.png` | 2048 × 256 | 512 × 64 | Bolt strips for a line being drawn; tile end to end |
+
+### How the star layers combine (Figma page "Star", frame "Star (state preview)")
+
+Sizes are relative to a 256 px state frame (the glow at 100%).
+
+| State | Layers, bottom to top | Scale and opacity |
+|---|---|---|
+| Idle | glow, core | glow 256, core 64 |
+| Pointed at | glow, ring, core | glow 269 (×1.05), ring 128, core 70 (×1.1) |
+| Grabbed | glow, sparks, core | glow 307 (×1.2), sparks 166 (×1.3), core 83 (×1.3) |
+| Suggested | glow, dashed ring, core | glow 256, ring 128, core 64; the whole star at 40% |
+| Visited | glow, orbit, core | glow 256, orbit 256, core 64 |
+
+### `Assets/_Project/Art/UI/`
+
+| File | Pixels | Figma px | Use |
+|---|---|---|---|
+| `note_compact.png`, `_pointed`, `_held` | 928 × 928 | 232 | Compact note, three states. The 200 px note sits inside 16 px of padding for its shadow and outline |
+| `note_expanded.png` | 1280 × 1120 | 320 × 280 | Expanded note, no picture |
+| `note_expanded_picture.png` | 1280 × 1840 | 320 × 460 | Expanded note with the 280 × 158 picture slot |
+| `note_summary_loading.png` | 1120 × 224 | 280 × 56 | Three placeholder bars while the summary loads |
+| `note_hint.png` | 872 × 96 | 218 × 24 | "Pull to your face to enter" hint (fixed text) |
+| `label_suggested.png` | 640 × 112 | 160 × 28 | Suggested-topic label background (pill) |
+| `voice_listening.png`, `_thinking`, `_heard`, `_didnt_catch` | 480 × 480 | 120 | Voice indicator states |
+| `voice_heard_pill.png` | 800 × 160 | 200 × 40 | Pill behind the heard words (live text) |
+| `voice_pulse_ring.png`, `voice_spinner.png` | 480 × 480 | 120 | Animated layers: scale the pulse, spin the spinner |
+| `icon_*.png` (18 files) | 192 × 192 | 48 | Icons from section 5.11 |
+| `controls_void.png`, `controls_world.png` | 1504 × 800 | 376 × 200 | Controls cards, labels baked in |
+| `title_card.png` | 1200 × 300 | 1200 × 300 | World title card background (dark glass), exported at 1× |
+| `marker_sent.png`, `_landed`, `_failed` | 960 × 960 | 240 | Pending-instruction marker states |
+| `marker_track.png`, `marker_fill.png` | 960 × 960 | 240 | Ring track, and the ring that fills over two seconds (radial fill in Unity) |
+| `marker_pill.png` | 1920 × 320 | 480 × 80 | Pill for spoken requests (live text) |
+| `message_working.png`, `message_problem.png` | 1200 × 200 | 600 × 100 | Message backgrounds with icon; live text goes to the right of the icon |
+| `wordmark.png` | 1600 × 600 | 800 × 300 | ZAP! wordmark, exported at 2× |
+| `app_icon.png` | 2048 × 2048 | 512 | App icon |
+
+### Stretching pieces (use as 9-slice sprites)
+
+Corner sizes follow section 4 of this brief. They were not measured again in Figma. Multiply by the export scale to get the pixel border.
+
+| Piece | Corner | Border at export scale |
+|---|---|---|
+| Notes (compact and expanded) | 6 px | 24 px, plus the 16 px (64 px) shadow padding on the compact note |
+| Cards and messages (`controls_*`, `title_card`, `message_*`) | 16 px | 64 px (`title_card`: 16 px at 1×) |
+| Pills (`label_suggested`, `voice_heard_pill`, `marker_pill`, `message_*`) | fully round | half the height |
+
+### Not wired yet
+
+The images are in place, but the app does not use them yet. The theme has slots only for `nodeGlow`, `nodeRing`, `lineImage` and `noteBackground`. The core developer needs to add slots for the other pieces and wire them in. The import settings are listed in the newest design handoff in `docs/handoffs/`.

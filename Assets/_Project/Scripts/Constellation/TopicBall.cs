@@ -68,8 +68,9 @@ namespace Zap.Constellation
         public void SetDraft(bool draft)
         {
             Grab.enabled = !draft;
-            Body.collisionDetectionMode = draft ? CollisionDetectionMode.ContinuousSpeculative : CollisionDetectionMode.ContinuousDynamic;
+            if (draft) Body.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
             Body.isKinematic = draft;
+            if (!draft) Body.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
             Crystal.SetRecording(draft);
         }
         public void SetData(NodeData data) { Data = data; Refresh(); }

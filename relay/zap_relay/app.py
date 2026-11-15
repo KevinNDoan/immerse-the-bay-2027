@@ -377,7 +377,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from None
         except (RuntimeError, httpx.HTTPError):
-            raise HTTPException(503, "Object requests need OpenAI on the laptop. Your existing objects are still available.") from None
+            raise HTTPException(503, "That object request could not finish. Check OpenAI on the laptop or try again; your existing objects are kept.") from None
 
     @app.post("/speech/transcribe")
     async def transcribe(request: Request) -> dict:

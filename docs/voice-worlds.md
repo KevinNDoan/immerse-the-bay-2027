@@ -41,22 +41,27 @@ The judges' page is at `http://localhost:8787/`. Merely opening it does not crea
 
 | Action | Control |
 |---|---|
-| Write a new ball | Hold right A, speak a topic, release; inside a world, the current world becomes its parent |
+| Write a new ball | Press A: a glowing orb appears immediately at the right hand. Hold while speaking, then release; inside a world, the current world becomes its parent |
 | Edit a ball | Point at or grab it, then hold right B, speak the edit, release |
 | Grab and place | Grip; gentle release leaves the ball floating |
 | Enter a world | Deliberately throw the ball forward, or press left X with it selected |
-| Return | Left Y |
-| Move/look inside a world | Left stick walks against collision; right stick snap-turns |
-| Ask/revise the learning object | Hold the left trigger, speak, release (also steers Orbis in video mode) |
+| Cancel unfinished speech / idea | Left Y while recording, transcribing or waiting for an AI response; release the voice button before trying again |
+| Return | Left Y when no voice request is pending |
+| Move/look inside a world | Left stick accelerates into walking and slides along walls; right stick snap-turns when not pointing at an object |
+| Ask, add or revise an object | Hold left trigger, speak, release. A question produces an explanation; a request for another object adds it; explicit revisions change the selected object |
 | Edit the current world's saved topic | Hold B; if a child ball is selected, B edits that child instead |
-| Inspect the learning object | Grip rotates/moves; two grips resize; right trigger spreads its parts |
-| Reposition/pause the learning object | X places it on a nearby surface when no child is selected; left stick click pauses animation |
+| Inspect an object | Grip moves/rotates; two grips resize; while pointing/holding, right stick up/down zooms and left/right adjusts its experiment |
+| Move a reading pane | Grip the glass pane itself, move/rotate it, then release. It stays independently of the object and its placement is saved |
+| Discover more | Right trigger advances the selected object’s exploration steps; right stick click resets its experiment |
+| Reposition/pause an object | X brings the selected object and its pane in front of you when no child ball is selected; left stick click pauses animation |
 | Add/remove a parent connection | Point at the parent, hold right trigger, point at the child, release; repeat to remove |
 | Pull/stretch the constellation | Hold both grips in empty space and move/spread your hands |
 
-Grant microphone access the first time prompted, then hold the button again. A recording lasts at most 20 seconds. Processing and errors are shown on the controls card. The ball appears just in front of the right controller after generation, ready to grab. Released balls slow down and float without gravity.
+Grant microphone access the first time prompted, then hold the button again. A recording lasts at most 20 seconds. The world pane shows listening, transcription, thinking, answers and retry details; the left-hand display holds controls and short status messages, without repeating the explanation. The question targets the object selected when recording begins. Hovering another object does not hide the answer; grabbing or deliberately using an object's controls changes the reading pane.
 
-In the Editor, V/B hold-to-talk create/edit, N asks; Enter opens, Escape returns, arrows move/turn, Space triggers an event. The development panel also accepts typed text through the same note-generation path. The XR Interaction Simulator handles controller pose/grip simulation.
+The orb appears at button-down, pulses while A is held, and stays at the hand while transcription and writing finish. Y cancels an unfinished request before leaving the world: microphone capture stops, the temporary orb disappears, and late responses cannot create a node or overwrite another request. Empty or failed recordings likewise remove the unfinished orb without saving a node. Cancellation discards the pending result; it does not delete a previously completed idea. Released balls slow down and float without gravity.
+
+In the Editor, V/B hold-to-talk create/edit, N asks; Enter opens, Escape cancels a pending request or returns, arrows move/turn, Space triggers an event. The development panel also accepts typed text through the same note-generation path. The XR Interaction Simulator handles controller pose/grip simulation.
 
 ## Parent context
 
@@ -102,7 +107,7 @@ Start a stand-in relay for Unity tests with `ORBIS_MODE=standin RELAY_PORT=8787 
 
 ## Current boundaries
 
-- Geometry mode now loads actual environment and collision meshes, with a schematic learning object placed on a supporting surface. The one existing test world is reused for every topic under the owner's credit limit. See `docs/spatial-worlds.md`.
+- Geometry mode loads actual environment and collision meshes. Learning objects float independently of furniture, and remain where released. Up to six objects per idea are saved with their poses, exploration step and parameter under `Application.persistentDataPath/exploration/`. The one existing test world is reused for every topic under the owner's credit limit. See `docs/spatial-worlds.md`.
 - The imported environment is static. Teaching objects animate and respond to manipulation/voice; arbitrary environment inhabitants are not yet independently animated or interactive.
 - `WORLD_PROVIDER=orbis` retains the video experiment. It does not provide shared scene geometry, stereo depth or reliable spatial persistence; it is not the current geometry-mode background.
 - Steering completion uses an estimated frame boundary, not a guarantee that every visual instruction was obeyed.

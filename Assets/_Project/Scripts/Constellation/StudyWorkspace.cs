@@ -22,6 +22,9 @@ namespace Zap.Constellation
             public Vector3 position, rotation, scale;
             public int step;
             public float parameter;
+            public string answer;
+            public bool panePlaced;
+            public Vector3 panePosition, paneRotation;
         }
         [Serializable] private class SavedSpace { public int version = 1; public SavedObject[] objects; }
 
@@ -54,6 +57,8 @@ namespace Zap.Constellation
                     exhibit.Grab.transform.SetPositionAndRotation(_origin + _rotation * item.position, _rotation * Quaternion.Euler(item.rotation));
                     exhibit.Grab.transform.localScale = Vector3.one * Mathf.Clamp(item.scale.x, .12f, 5);
                     exhibit.RestoreExploration(item.step, item.parameter);
+                    if (!string.IsNullOrEmpty(item.answer)) exhibit.Explain(item.answer);
+                    if (item.panePlaced) exhibit.Pane.Place(_origin + _rotation * item.panePosition, _rotation * Quaternion.Euler(item.paneRotation));
                 }
             if (_objects.Count == 0 && initial != null) Add(initial);
         }
@@ -80,15 +85,44 @@ namespace Zap.Constellation
             foreach (var item in _objects)
             {
                 item.Focus(ray);
-                if (item.IsHeld) held = item;
+                if (item.IsHeld || item.Pane.IsHeld) held = item;
                 if (item.IsFocused && (nearest == null || item.FocusDistance < nearest.FocusDistance)) nearest = item;
             }
-            if (held != null || nearest != null) SetCurrent(held ?? nearest);
+            // Hover targets the next action without hiding the answer someone is reading.
+            if (held != null || nearest != null) SetCurrent(held ?? nearest, held != null);
         }
-        public void SetCurrent(StudyExhibit exhibit)
+        public void SetCurrent(StudyExhibit exhibit, bool showPane = true)
         {
             Current = exhibit;
-            foreach (var item in _objects) item.Active = item == exhibit;
+            if (showPane) foreach (var item in _objects) item.Active = item == exhibit;
+        }
+        public bool ApplyReply(StudyReply reply, StudyExhibit target)
+        {
+            if (reply == null || string.IsNullOrWhiteSpace(reply.answer)) return false;
+            if (reply.action == "add" || reply.action == "revise")
+            {
+                if (reply.model?.parts == null || reply.model.parts.Length == 0 || reply.model.parts.Length > 28) return false;
+                if (reply.action == "add" || target == null)
+                {
+                    if (Full) return false;
+                    target?.ClearRequest(); target = Add(reply.model);
+                }
+                else
+                {
+                    var pose = target.Grab.transform;
+                    Vector3 position = pose.position, scale = pose.localScale; Quaternion rotation = pose.rotation;
+                    bool panePlaced = target.Pane.IsPlaced;
+                    Vector3 panePosition = target.Pane.transform.position; Quaternion paneRotation = target.Pane.transform.rotation;
+                    target.Build(reply.model);
+                    if (target.Grab == null) return false;
+                    target.Grab.transform.SetPositionAndRotation(position,rotation); target.Grab.transform.localScale = scale;
+                    if (panePlaced) target.Pane.Place(panePosition,paneRotation);
+                }
+            }
+            else if (reply.action != "answer") return false;
+            if (target == null) return false;
+            SetCurrent(target); target.Explain(reply.answer);
+            return true;
         }
         public void Save()
         {
@@ -99,7 +133,10 @@ namespace Zap.Constellation
                 var pose = item.Grab.transform;
                 list.Add(new SavedObject { model = item.Data, position = Quaternion.Inverse(_rotation) * (pose.position - _origin),
                     rotation = (Quaternion.Inverse(_rotation) * pose.rotation).eulerAngles, scale = pose.localScale,
-                    step = item.StepIndex, parameter = item.Parameter });
+                    step = item.StepIndex, parameter = item.Parameter, answer = item.Answer,
+                    panePlaced = item.Pane.IsPlaced,
+                    panePosition = Quaternion.Inverse(_rotation) * (item.Pane.transform.position - _origin),
+                    paneRotation = (Quaternion.Inverse(_rotation) * item.Pane.transform.rotation).eulerAngles });
             }
             try
             {

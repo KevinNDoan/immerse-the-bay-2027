@@ -1,5 +1,9 @@
 # ZAP! planning doc
 
+**Pane feedback (2026-11-14, evening):** Explanations belong on movable glass panes. The left-hand display should provide controls and brief status rather than duplicate learning content. Requests need visible progress/errors, answers must remain with the intended object, and an unfinished new idea must be cancellable. Pane placement should persist with the idea's exploration objects. The saved-world budget remains unchanged.
+
+**Latest headset feedback (2026-11-14):** Treat the world as a haven for exploration. Floating objects do not need to be physically attached to furnishings. Prioritize recognizable models, direct zoom/rotation, meaningful discoveries and explanations, and wishing additional objects into the same space. Examples are quality targets, not topic-routing templates. A should show an orb immediately and keep it glowing while held. Preserve the single-world budget.
+
 ## Implementation update — 2026-11-14
 
 **Latest product clarification:** ZAP is a spatial knowledge graph in which every idea is represented by an entire explorable world. Users can explore many subjects, make associative connections and discover groups of similar ideas. An idea reached from another world does not have to remain a subtopic or share its setting. Prior context is optional background for resolving ambiguity and explicit connections; a clear new idea takes priority. Similarity-based grouping and associative cross-links are the intended graph behavior. Automatic semantic grouping is not implemented yet; the current lineage-based links must not be described as that feature. The one-world testing budget remains in force.

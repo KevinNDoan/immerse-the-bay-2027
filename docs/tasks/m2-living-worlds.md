@@ -1,5 +1,9 @@
 # Brief: navigable, living learning spaces
 
+**Pane feedback (2026-11-14, evening):** Make explanations look like glass and let the user grab and place their panes. Fix missing answer updates and avoid repeating the learning content in the left-hand controls. Show request progress and failures on the pane, retain the spoken target through transcription, and provide cancellation for an unfinished idea. Continue testing with the one saved environment; do not generate another world.
+
+**Latest headset feedback (2026-11-14):** Treat the world as a haven for exploration. Floating objects do not need to be physically attached to furnishings. Prioritize recognizable models, direct zoom/rotation, meaningful discoveries and explanations, and wishing additional objects into the same space. Examples are quality targets, not topic-routing templates. A should show an orb immediately and keep it glowing while held. Preserve the single-world budget.
+
 The owner explicitly selected fully navigable 3D scenes and living behavior on 2026-11-14, after clarifying the difference between a panorama and real geometry. The owner then clarified that DNA/lab/dinosaurs are examples only: the implementation must generalize to arbitrary requests and must not hardcode these topics.
 
 The owner's subsequent clarification defines the product as a knowledge graph of worlds: each idea has its own world, similar ideas should group together, and exploration may jump across loosely related or unrelated subjects. Preserve prior context as optional background, not a requirement that each new idea be a subtopic. Automatic semantic grouping and associative graph links are a separate outstanding implementation item; do not claim that lineage links provide them.

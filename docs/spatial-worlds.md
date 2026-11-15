@@ -2,7 +2,7 @@
 
 ## Scope and budget
 
-The owner rejected the detached video-background/teaching-overlay experience and authorized a World Labs experiment. After one world and one HQ export were started, the owner explicitly instructed us to reuse **only that world** for all further tests. Root `.env` pins that world and sets `WORLD_GENERATION_ENABLED=false`. Both generation and export methods reject new jobs by default. Do not enable new jobs without a new user instruction.
+The owner rejected the detached video-background/teaching-overlay experience and authorized a World Labs experiment. After one world and one HQ export were started, the owner explicitly instructed us to reuse **only that world** for all further tests. The replay runner pins that world in its command and never loads a World Labs key. The normal relay must keep `WORLD_GENERATION_ENABLED=false`. Both generation and export methods reject new jobs by default. Do not enable new jobs without a new user instruction.
 
 The pinned world is a test environment, not a topic keyword preset. Every request carries its current idea and optional exploration history into GPT's learning-object generation. A clear new idea takes priority and may be unrelated to previous ideas; context only helps clarify ambiguity or requested connections. Different topics reuse the same physical test environment to avoid World Labs charges. No lab/DNA/dinosaur routing exists. The product goal is a knowledge graph of distinct worlds; automatic similarity grouping is not implemented yet.
 
@@ -11,8 +11,8 @@ The pinned world is a test environment, not a topic keyword preset. Every reques
 - A World Labs textured mesh and its collider share one transform. Head position, stereo rendering, occlusion and local walking operate on geometry.
 - The relay converts static embedded GLB into bounded mesh packets and resizes textures to at most 4096 pixels. Unity loads those packets at runtime; no new Unity package or project-setting change is needed.
 - Marble's raw OpenCV axes are converted to Unity axes, with its metric scale applied to visual and collision meshes together. Ground metadata aligns the floor. Entry searches for clear standing space and an accessible supporting surface instead of trusting a generated camera position that may overlap furniture. A distant panorama covers the sky and gaps outside reconstructed geometry.
-- The learning object uses the same depth buffer, rests on a detected supporting surface, takes a tint from the environment, and has a soft contact shadow. Captions appear on focus/hold. Lighting matching is approximate, not a relighting solution.
-- The same bounded geometry vocabulary builds all learning objects: spheres, boxes, cylinders, rings and tubes. They can be grabbed, rotated, resized, spread, paused and revised by speech. These are schematic teaching objects, not arbitrary photorealistic assets or validated scientific simulations.
+- Learning objects float freely as representations for experimentation. They use the scene depth buffer but have no gravity or furniture-placement requirement. A translucent glass pane explains the selected part, discovery step or experiment state. Each pane can be grabbed and placed independently; placement and the latest answer persist per object. The environment is a haven, not a constraint on the model’s physics.
+- The same bounded geometry vocabulary builds all objects: spheres, boxes, cylinders, rings, tubes, smooth helices, repeated structures and exact connectors between paths. Up to five discovery states and one continuous qualitative experiment attach explanations to visible changes. Objects can be held, rotated, zoomed, paused and revised; voice can add another object or answer without replacing it. Up to six objects and their exploration state persist per idea. These are schematic representations, not arbitrary photorealistic assets or validated scientific simulations.
 - New ideas can be spoken and thrown from inside a world. They retain the current world's ancestry and appear in the saved constellation when returning.
 - Crystal-ball previews and the hyperspace journey are integrated from the coordinated visual-design chat. The journey waits for loaded geometry or the first decoded video frame, supports Y cancellation, shows elapsed time and has a bounded client wait.
 
@@ -26,7 +26,8 @@ The existing socket protocol remains available for the Orbis experiment. The fol
 | `GET /world/jobs/{cacheKey}` | Poll the saved job; ready responses include `plan` and `environment` |
 | `GET /world/assets/{cacheKey}/{filename}` | Local converted mesh or JPEG; IDs/filenames are constrained |
 | `GET /world/preview` | Base64 preview of the existing pinned panorama; never creates a provider job |
-| `POST /world/study` | `{topic, context, instruction, current}`; returns a validated updated teaching model |
+| `POST /world/study` | Legacy revision endpoint: `{topic, context, instruction, current}` returns a validated model |
+| `POST /world/explore` | `{topic, context, instruction, current, focused, objects, step, parameter}`; returns `{action: add/revise/answer, answer, model}`. Questions keep geometry; additions preserve existing objects |
 
 `environment` contains `basePath`, `visual[]`, `collision[]`, `panorama`, `metricScale`, `groundOffset`, and `ambient`. Each mesh entry contains `mesh`, `texture`, `vertices`, and `triangles`.
 
@@ -49,3 +50,13 @@ The single paid export completed and was imported into the local pinned cache on
 The environment mesh is static. Local teaching objects animate, but arbitrary inhabitants do not yet walk, react or become individually manipulable. Close inspection can expose reconstructed-surface holes or softness. Stick movement uses mesh collision and ground checks; physical head movement is still controlled by the headset. New environment generation plus HQ export can take minutes to an hour, so generation is not an instant teleport. Cached loading is substantially faster.
 
 Sources checked: [World Labs export API](https://docs.worldlabs.ai/api/reference/worlds/export), [mesh export limits](https://docs.worldlabs.ai/marble/export/mesh), [Marble coordinate conventions](https://docs.worldlabs.ai/api/rendering-spz), [glTF 2.0](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html), [Orbis API](https://docs.reactor.inc/model-api-reference/visko-orbis-stable/overview).
+
+## Exploration model contract
+
+`relay/zap_relay/study_models.py` defines and validates the strict data schema. Geometry is bounded to 28 part groups and 160 repeated components. `helix` defines radius/height/turns/phase; `links` samples two actual curve paths, with optional half-connectors for distinct colors. Steps reference part indices and apply independent position/rotation/scale/visibility changes from the baseline. The experiment interpolates bounded transforms from 0 to 1. It is a qualitative illustration, with no generated executable code or physics-solver claims. Current state and focused part accompany follow-up questions. Generated explanations can still be wrong; checked fixtures do not establish educational correctness for every future request.
+
+Movement now uses a graded deadzone, bounded acceleration and frame time, contact sliding, small-gap floor tolerance, and restrained vertical correction. It continues while speech or AI requests are pending. Snap turning remains a comfort choice. Actual headset frame-time and comfort must be assessed separately from movement logic tests.
+
+The world pane owns learning content and request feedback; the wrist display owns controls and short status. A voice question snapshots its selected object, focused part and exploration state at recording start. Responses return to that object, even if the pointer moves during transcription. Hover updates action targeting without switching the visible reading pane; deliberate grip/experiment/discovery actions switch it. Cancel invalidates the request, aborts the client HTTP connection and suppresses delayed mutations. A provider call already started may still finish on the laptop, but its cancelled result is not applied.
+
+The pane shader uses translucent tinted glass, rounded illuminated edges and a subtle sheen, with stereo instancing and no HDR or scene-color copy. It is not a blurred refraction effect. Positioned panes retain their orientation rather than turning toward the head after release. X resets the selected object and pane to a comfortable starting placement.

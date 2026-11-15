@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using TMPro;
 using UnityEngine;
 using UnityEngine.XR.Interaction.Toolkit;
 using UnityEngine.XR.Interaction.Toolkit.Interactables;
@@ -13,7 +12,7 @@ namespace Zap.Constellation
     {
         public StudyModelData Data { get; private set; }
         public bool IsHeld => _grab != null && _grab.isSelected;
-        public bool IsFocused => _focused >= 0;
+        public bool IsFocused => !float.IsPositiveInfinity(FocusDistance);
         public bool Exploded { get; private set; }
         public int PartCount => _parts.Count;
         public XRGrabInteractable Grab => _grab;
@@ -21,20 +20,23 @@ namespace Zap.Constellation
         public float Parameter { get; private set; }
         public string FocusedName => _focused >= 0 ? _parts[_focused].data.name : "";
         public string LearningText { get; private set; }
+        public string Answer => _answer;
+        public ExplorationPane Pane { get; private set; }
         public bool Active { get; set; } = true;
         public float FocusDistance { get; private set; } = float.PositiveInfinity;
         private GameObject _model;
         private Transform _assembly;
         private XRGrabInteractable _grab;
-        private TextMeshPro _caption;
         private readonly List<Part> _parts = new List<Part>();
         private readonly List<Mesh> _meshes = new List<Mesh>();
         private int _focused = -1;
         private float _spread, _clock, _fit, _parameterVisual, _nextFocus;
         private bool _paused, _experimentActive;
         private BoxCollider _collider;
-        private string _answer, _captionText;
+        private string _answer, _requestStatus, _requestBody;
+        private bool _requestPending, _requestError;
         private Vector3 _boundsSize;
+        private Vector3 _captionOffset;
         public void SetEnvironment(Zap.World.GeneratedEnvironment environment) { }
         private sealed class Part
         {
@@ -42,8 +44,10 @@ namespace Zap.Constellation
             public Transform transform;
             public MeshCollider hit;
             public Material material;
+            public Renderer renderer;
             public Color color;
             public Vector3 position;
+            public bool highlighted;
         }
 
         public void Build(StudyModelData data)
@@ -71,8 +75,8 @@ namespace Zap.Constellation
                 var hit = obj.AddComponent<MeshCollider>(); hit.sharedMesh = mesh;
                 var color = ColorUtility.TryParseHtmlString(item.color, out var parsed) ? parsed : Color.cyan;
                 var material = new Material(Shader.Find("Zap/Study")); material.SetColor("_BaseColor", color);
-                obj.AddComponent<MeshRenderer>().sharedMaterial = material;
-                _parts.Add(new Part { data = item, transform = obj.transform, hit = hit, material = material, color = color, position = center });
+                var renderer = obj.AddComponent<MeshRenderer>(); renderer.sharedMaterial = material;
+                _parts.Add(new Part { data = item, transform = obj.transform, hit = hit, renderer = renderer, material = material, color = color, position = center });
             }
             if (_parts.Count == 0) { Clear(); return; }
             _fit = .8f * Mathf.Clamp(data.displayScale <= 0 ? 1 : data.displayScale, .5f, 1.8f) /
@@ -94,12 +98,8 @@ namespace Zap.Constellation
             transformer.allowTwoHandedScaling = true; transformer.allowOneHandedScaling = false;
             transformer.minimumScaleRatio = .12f; transformer.maximumScaleRatio = 5;
             _grab.AddSingleGrabTransformer(transformer); _grab.AddMultipleGrabTransformer(transformer);
-            var caption = new GameObject("Exploration card"); caption.transform.SetParent(transform, false);
-            _caption = caption.AddComponent<TextMeshPro>(); _caption.fontSize = .28f;
-            _caption.enableAutoSizing = true; _caption.fontSizeMin = .22f; _caption.fontSizeMax = .28f;
-            _caption.richText = false; _caption.alignment = TextAlignmentOptions.TopLeft;
-            _caption.rectTransform.sizeDelta = new Vector2(1.05f, .65f);
-            _caption.overflowMode = TextOverflowModes.Ellipsis;
+            var pane = new GameObject("Exploration glass pane"); pane.transform.SetParent(transform, false);
+            Pane = pane.AddComponent<ExplorationPane>(); Pane.Initialize();
             LearningText = data.explanation;
             Recenter();
         }
@@ -113,6 +113,8 @@ namespace Zap.Constellation
             _model.transform.position = camera.position + forward * 1.35f + Vector3.down * .06f;
             _model.transform.rotation = Quaternion.Euler(0, camera.eulerAngles.y, 0);
             _model.transform.localScale = Vector3.one;
+            _captionOffset = forward * .3f + Vector3.Cross(Vector3.up,forward) * .85f + Vector3.down * .09f;
+            Pane?.Attach();
         }
 
         public void Focus(Ray ray)
@@ -123,6 +125,8 @@ namespace Zap.Constellation
             for (int i = 0; i < _parts.Count; i++)
                 if (_parts[i].hit.enabled && _parts[i].hit.Raycast(ray, out var hit, 6) && hit.distance < FocusDistance)
                 { FocusDistance = hit.distance; _focused = i; }
+            // Thin curves still have an easy-to-target interaction volume between their strands.
+            if (_focused < 0 && _collider != null && _collider.Raycast(ray, out var volume, 6)) FocusDistance = volume.distance;
         }
 
         public void Zoom(float amount)
@@ -135,27 +139,36 @@ namespace Zap.Constellation
         public void AdjustParameter(float amount)
         {
             if (Data?.experiment == null || string.IsNullOrEmpty(Data.experiment.label) || Mathf.Abs(amount) < .15f) return;
+            if (!_requestPending) ClearRequest();
             Parameter = Mathf.Clamp01(Parameter + amount * Time.unscaledDeltaTime * .45f); _answer = null; _experimentActive = true;
+            StepIndex = -1;
             LearningText = Parameter < .5f ? Data.experiment.lowExplanation : Data.experiment.highExplanation;
         }
         public void NextStep()
         {
-            _answer = null; _experimentActive = false;
+            if (!_requestPending) ClearRequest();
+            _answer = null; _experimentActive = false; Parameter = 0;
             if (Data?.steps == null || Data.steps.Length == 0) { ToggleExploded(); return; }
             StepIndex = (StepIndex + 1) % (Data.steps.Length + 1);
             if (StepIndex == Data.steps.Length) StepIndex = -1;
             LearningText = StepIndex < 0 ? Data.explanation : Data.steps[StepIndex].explanation;
         }
-        public void Explain(string answer) { _answer = answer; LearningText = answer; }
+        public void Explain(string answer)
+        { ClearRequest(); _answer = answer; LearningText = answer; }
+        public void RequestFeedback(string status, string message, bool pending = true, bool error = false)
+        { _requestStatus = status; _requestBody = message; _requestPending = pending; _requestError = error; }
+        public void ClearRequest()
+        { _requestStatus = _requestBody = null; _requestPending = _requestError = false; }
         public void ToggleExploded() { Exploded = !Exploded; }
         public void ToggleAnimation() { _paused = !_paused; }
-        public void ResetExploration() { StepIndex = -1; Parameter = 0; Exploded = false; _answer = null; _experimentActive = false; LearningText = Data?.explanation; }
+        public void ResetExploration() { if (!_requestPending) ClearRequest(); StepIndex = -1; Parameter = 0; Exploded = false; _answer = null; _experimentActive = false; LearningText = Data?.explanation; }
         public void RestoreExploration(int step, float parameter)
         {
             StepIndex = Data?.steps == null ? -1 : Mathf.Clamp(step, -1, Data.steps.Length - 1);
             Parameter = Mathf.Clamp01(parameter);
             _experimentActive = Parameter > 0;
             LearningText = StepIndex < 0 ? Data?.explanation : Data.steps[StepIndex].explanation;
+            if (_experimentActive) LearningText = Parameter < .5f ? Data.experiment?.lowExplanation : Data.experiment?.highExplanation;
         }
 
         private void LateUpdate()
@@ -179,28 +192,31 @@ namespace Zap.Constellation
                 ApplyChanges(Data.experiment?.changes, i, _parameterVisual, ref position, ref rotation, ref scale, ref visible);
                 Vector3 radial = part.position.sqrMagnitude > .0025f ? part.position.normalized : Quaternion.Euler(0, i * 137.5f, 0) * Vector3.right;
                 position += radial * (_spread * .32f);
-                part.transform.localPosition = Vector3.Lerp(part.transform.localPosition, position, blend);
-                part.transform.localRotation = Quaternion.Slerp(part.transform.localRotation, rotation, blend);
-                part.transform.localScale = Vector3.Lerp(part.transform.localScale, visible ? scale : Vector3.one * .001f, blend);
-                part.hit.enabled = visible;
+                if ((part.transform.localPosition-position).sqrMagnitude > .0000001f)
+                    part.transform.localPosition = Vector3.Lerp(part.transform.localPosition, position, blend);
+                if (Quaternion.Angle(part.transform.localRotation,rotation) > .01f)
+                    part.transform.localRotation = Quaternion.Slerp(part.transform.localRotation, rotation, blend);
+                if ((part.transform.localScale-scale).sqrMagnitude > .0000001f)
+                    part.transform.localScale = Vector3.Lerp(part.transform.localScale, scale, blend);
+                if (part.hit.enabled != visible) part.hit.enabled = visible;
+                if (part.renderer.enabled != visible) part.renderer.enabled = visible;
                 bool emphasized = i == _focused || (step?.focus != null && Array.IndexOf(step.focus, i) >= 0);
-                part.material.SetFloat("_Highlight", emphasized ? 1 : 0);
+                if (part.highlighted != emphasized) { part.highlighted = emphasized; part.material.SetFloat("_Highlight", emphasized ? 1 : 0); }
             }
-            if (_caption != null && Camera.main != null)
+            if (Pane != null && Camera.main != null)
             {
-                _caption.gameObject.SetActive(Active);
+                Pane.gameObject.SetActive(Active || Pane.IsHeld);
                 var head = Camera.main.transform;
-                Vector3 forward = Vector3.ProjectOnPlane(head.forward, Vector3.up).normalized;
-                // Stable, readable card independent of model enlargement; never follows a tiny part into the face.
-                _caption.transform.position = head.position + forward * 1.5f + Vector3.down * .63f;
-                _caption.transform.rotation = Quaternion.LookRotation(_caption.transform.position - head.position);
-                string title = step == null ? Data.title : step.title;
-                string body = _answer ?? (step != null || _experimentActive ? LearningText :
-                    IsFocused ? _parts[_focused].data.name + ": " + _parts[_focused].data.detail : LearningText);
-                string experiment = string.IsNullOrEmpty(Data.experiment?.label) ? "" :
-                    "\n" + Data.experiment.label + "  " + Mathf.RoundToInt(Parameter * 100) + "%  ·  " + (Parameter < .5f ? Data.experiment.lowLabel : Data.experiment.highLabel);
-                string text = title + "\n" + body + experiment + "\nGrip: move · Stick ↑↓: zoom · ←→: experiment · Trigger: explore";
-                if (text != _captionText) { _caption.text = text; _captionText = text; }
+                // Stay beside the object, so turning toward the card actually brings it into view.
+                // Enlargement does not scale or move the reading surface.
+                Pane.Follow(_model.transform.position + _captionOffset, head);
+                string title = _answer != null || _requestStatus != null || step == null ? Data.title : step.title;
+                string body = _requestBody ?? _answer ?? (step != null || _experimentActive ? LearningText :
+                    _focused >= 0 ? _parts[_focused].data.name + ": " + _parts[_focused].data.detail : LearningText);
+                string experiment = step != null || string.IsNullOrEmpty(Data.experiment?.label) ? "" :
+                    Data.experiment.label + "  " + Mathf.RoundToInt(Parameter * 100) + "%  ·  " + (Parameter < .5f ? Data.experiment.lowLabel : Data.experiment.highLabel);
+                string footer = _requestStatus ?? (_answer != null ? "ANSWER" : step != null ? "DISCOVERY " + (StepIndex+1) + " / " + Data.steps.Length : experiment);
+                Pane.SetContent(title, body, footer, _requestPending, _requestError);
             }
         }
 
@@ -213,7 +229,7 @@ namespace Zap.Constellation
                     position += change.offset * weight;
                     rotation *= Quaternion.Euler(change.rotation * weight);
                     scale = Vector3.Scale(scale, Vector3.Lerp(Vector3.one, change.scale, weight));
-                    if (!change.visible && weight > .98f) visible = false;
+                    if (!change.visible && weight > .005f) visible = false;
                 }
         }
 
@@ -221,12 +237,13 @@ namespace Zap.Constellation
         public void Clear()
         {
             if (_model != null) { _model.SetActive(false); Destroy(_model); }
-            if (_caption != null) Destroy(_caption.gameObject);
+            if (Pane != null) { Pane.gameObject.SetActive(false); Destroy(Pane.gameObject); }
             foreach (var part in _parts) if (part.material != null) Destroy(part.material);
             foreach (var mesh in _meshes) if (mesh != null) Destroy(mesh);
             _parts.Clear(); _meshes.Clear(); _grab = null; _model = null; _focused = -1;
-            _caption = null; _collider = null; Data = null; Exploded = false; StepIndex = -1;
-            _spread = _clock = _parameterVisual = Parameter = 0; _answer = _captionText = null; _experimentActive = false;
+            Pane = null; _collider = null; Data = null; Exploded = false; StepIndex = -1;
+            _spread = _clock = _parameterVisual = Parameter = 0; _answer = null; _experimentActive = false;
+            ClearRequest();
         }
         private void OnDestroy() { Clear(); }
     }

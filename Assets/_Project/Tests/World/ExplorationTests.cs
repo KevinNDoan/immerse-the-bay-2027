@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.IO;
+using System.Reflection;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -74,10 +75,16 @@ namespace Zap.World.Tests
             try
             {
                 workspace.Open(id,Model()); var first=workspace.Current; first.NextStep();
+                first.Pane.Place(new Vector3(.4f,1.7f,1.1f),Quaternion.Euler(5,20,0));
+                first.Explain("A saved answer remains with this object.");
                 workspace.Add(Model()); Assert.AreEqual(2,workspace.Objects.Count); Assert.AreSame(first,workspace.Objects[0]);
                 workspace.Save(); workspace.Close(); yield return null;
                 workspace.Open(id,null); yield return null;
                 Assert.AreEqual(2,workspace.Objects.Count); Assert.AreEqual(0,workspace.Objects[0].StepIndex);
+                Assert.IsTrue(workspace.Objects[0].Pane.IsPlaced);
+                Assert.Less(Vector3.Distance(new Vector3(.4f,1.7f,1.1f),workspace.Objects[0].Pane.transform.position),.001f);
+                Assert.Less(Quaternion.Angle(Quaternion.Euler(5,20,0),workspace.Objects[0].Pane.transform.rotation),.1f);
+                Assert.AreEqual("A saved answer remains with this object.",workspace.Objects[0].Answer);
             }
             finally
             {
@@ -90,6 +97,109 @@ namespace Zap.World.Tests
                 }
                 Object.Destroy(obj); Object.Destroy(camera);
             }
+        }
+
+        [UnityTest]
+        public IEnumerator AnswersStayOnTheRequestedObjectAndHoverDoesNotHideThem()
+        {
+            var camera=new GameObject("Answer camera"); camera.tag="MainCamera"; camera.AddComponent<Camera>();
+            var obj=new GameObject("Answer workspace"); var workspace=obj.AddComponent<StudyWorkspace>();
+            try
+            {
+                var first=workspace.Add(Model()); var second=workspace.Add(Model());
+                workspace.SetCurrent(first);
+                first.RequestFeedback("LISTENING", "Ask your question."); yield return null;
+                Assert.AreEqual("LISTENING",first.Pane.StatusText);
+                first.RequestFeedback("TRANSCRIBING", "Turning voice into text."); yield return null;
+                Assert.AreEqual("TRANSCRIBING",first.Pane.StatusText);
+                workspace.SetCurrent(second,false); // Pointer moved while the request was pending.
+                Assert.IsTrue(workspace.ApplyReply(new StudyReply {action="answer",answer="This answer belongs to the first object."},first));
+                yield return null;
+                workspace.SetCurrent(second,false); yield return null;
+                Assert.IsTrue(first.Active); Assert.IsFalse(second.Active);
+                Assert.AreEqual("This answer belongs to the first object.",first.Pane.BodyText);
+                first.RequestFeedback("REQUEST NOT COMPLETED", "No speech heard. Hold left trigger to try again.",false,true);
+                yield return null;
+                StringAssert.Contains("No speech heard",first.Pane.BodyText);
+                first.ClearRequest(); yield return null;
+                Assert.AreEqual(first.Answer,first.Pane.BodyText,"Cancelling must restore the previous answer.");
+                first.Pane.Place(new Vector3(.5f,1,1.3f),Quaternion.Euler(0,15,0));
+                Assert.IsTrue(workspace.ApplyReply(new StudyReply {action="revise",answer="Revised explanation.",model=Model()},first));
+                yield return null;
+                Assert.IsTrue(first.Pane.IsPlaced);
+                Assert.Less(Vector3.Distance(new Vector3(.5f,1,1.3f),first.Pane.transform.position),.001f);
+                Assert.AreEqual("Revised explanation.",first.Pane.BodyText);
+                string longAnswer="";
+                while(longAnswer.Length<800) longAnswer+="The model helps you explore how its parts fit together. ";
+                first.Explain(longAnswer.Substring(0,800)); yield return null; yield return null;
+                Assert.IsFalse(first.Pane.IsBodyTruncated,"A full-size AI answer was silently truncated by the reading pane.");
+                workspace.SetCurrent(second); yield return null;
+                Assert.IsFalse(first.Active); Assert.IsTrue(second.Active);
+            }
+            finally { Object.Destroy(obj); Object.Destroy(camera); }
+        }
+
+        [UnityTest]
+        public IEnumerator PaneCanBeGrabbedAndPlacedIndependentlyOfItsObject()
+        {
+            var camera=new GameObject("Pane camera"); camera.tag="MainCamera"; camera.AddComponent<Camera>(); camera.transform.position=Vector3.up*1.6f;
+            var manager=new GameObject("Pane interaction manager"); manager.AddComponent<XRInteractionManager>();
+            var obj=new GameObject("Pane test object"); var exhibit=obj.AddComponent<StudyExhibit>();
+            var hand=new GameObject("Pane hand"); hand.AddComponent<SphereCollider>().isTrigger=true;
+            hand.AddComponent<Rigidbody>().isKinematic=true; var interactor=hand.AddComponent<XRDirectInteractor>();
+            try
+            {
+                exhibit.Build(Model()); yield return null;
+                var pane=exhibit.Pane; pane.Grab.attachEaseInTime=0;
+                var original=pane.transform.position; var modelPosition=exhibit.Grab.transform.position;
+                hand.transform.position=original;
+                interactor.StartManualInteraction((UnityEngine.XR.Interaction.Toolkit.Interactables.IXRSelectInteractable)pane.Grab);
+                yield return null;
+                Assert.IsTrue(pane.IsHeld);
+                for(int i=0;i<12;i++) { hand.transform.position+=Vector3.left*.015f; hand.transform.Rotate(0,1,0); yield return null; }
+                interactor.EndManualInteraction(); yield return null;
+                var placed=pane.transform.position; var rotation=pane.transform.rotation;
+                Assert.Greater(Vector3.Distance(original,placed),.12f); Assert.IsTrue(pane.IsPlaced);
+                Assert.Less(Vector3.Distance(modelPosition,exhibit.Grab.transform.position),.001f);
+                camera.transform.Rotate(0,30,0); exhibit.Grab.transform.position+=Vector3.right*.25f;
+                yield return new WaitForSeconds(.2f);
+                Assert.Less(Vector3.Distance(placed,pane.transform.position),.001f);
+                Assert.Less(Quaternion.Angle(rotation,pane.transform.rotation),.1f);
+            }
+            finally { Object.Destroy(obj); Object.Destroy(hand); Object.Destroy(manager); Object.Destroy(camera); }
+        }
+
+        [UnityTest]
+        public IEnumerator CancelledIdeaIgnoresLateResponseAndDoesNotInterruptNextRequest()
+        {
+            var camera=new GameObject("Cancellation camera"); camera.tag="MainCamera"; camera.AddComponent<Camera>();
+            var obj=new GameObject("Cancellation controller"); var controller=obj.AddComponent<ConstellationController>(); controller.enabled=false;
+            const BindingFlags flags=BindingFlags.Instance|BindingFlags.NonPublic|BindingFlags.Public;
+            try
+            {
+                controller.BeginDraft();
+                var apply=typeof(ConstellationController).GetMethod("ApplyText",flags);
+                var old=(IEnumerator)apply.Invoke(controller,new object[]{"an idea","create",null,-1,null,null});
+                Assert.IsTrue(old.MoveNext());
+                // Stop at the transport boundary. Deliver a completed response after cancellation
+                // without contacting any provider or relying on a particular network delay.
+                var pending=(IEnumerator)old.Current;
+                var deliver=(Action<string>)pending.GetType().GetField("success",flags).GetValue(pending);
+                Assert.IsTrue(controller.Busy); Assert.IsTrue(controller.CancelPendingVoice());
+                Assert.IsFalse(controller.Busy); Assert.AreEqual(0,controller.Balls.Count);
+                var nextDraft=controller.BeginDraft();
+                var next=(IEnumerator)apply.Invoke(controller,new object[]{"a different idea","create",null,-1,null,null});
+                Assert.IsTrue(next.MoveNext()); Assert.IsTrue(controller.Busy);
+                deliver("{\"topic\":\"Late result\",\"summary\":\"Must be ignored\",\"worldPrompt\":\"No world\",\"suggestions\":[]}");
+                Assert.IsFalse(old.MoveNext());
+                Assert.AreEqual(0,controller.Balls.Count,"A cancelled response created a saved node.");
+                Assert.IsTrue(controller.Busy,"The cancelled request reset a newer operation.");
+                Assert.IsTrue(nextDraft.gameObject.activeSelf);
+                controller.CancelPendingVoice(); yield return null;
+                Assert.IsTrue(nextDraft==null); Assert.AreEqual(0,controller.Balls.Count);
+                (next as IDisposable)?.Dispose(); (pending as IDisposable)?.Dispose();
+            }
+            finally { Object.Destroy(obj); Object.Destroy(camera); }
         }
 
         [UnityTest]
@@ -137,7 +247,7 @@ namespace Zap.World.Tests
             if(string.IsNullOrEmpty(folder)) Assert.Ignore("Optional generated exploration preview.");
             var cameraObject=new GameObject("Exploration render camera"); cameraObject.tag="MainCamera";
             var camera=cameraObject.AddComponent<Camera>(); camera.transform.position=Vector3.up*1.6f;
-            camera.fieldOfView=65; camera.nearClipPlane=.03f; camera.clearFlags=CameraClearFlags.SolidColor; camera.backgroundColor=new Color(.025f,.035f,.06f);
+            camera.fieldOfView=80; camera.nearClipPlane=.03f; camera.clearFlags=CameraClearFlags.SolidColor; camera.backgroundColor=new Color(.025f,.035f,.06f);
             var obj=new GameObject("Rendered exploration"); var exhibit=obj.AddComponent<StudyExhibit>();
             var target=new RenderTexture(1400,1200,24); var read=new Texture2D(1400,1200,TextureFormat.RGB24,false);
             try
@@ -156,6 +266,15 @@ namespace Zap.World.Tests
                         File.WriteAllBytes(Path.Combine(folder,name+"-"+view+".png"),read.EncodeToPNG());
                     }
                 }
+                exhibit.Clear(); yield return null;
+                var draftObject=new GameObject("Recording orb preview");
+                var controller=draftObject.AddComponent<ConstellationController>(); controller.enabled=false;
+                controller.BeginDraft(); yield return null;
+                RenderPipeline.SubmitRenderRequest(camera,new UniversalRenderPipeline.SingleCameraRequest {destination=target});
+                var oldTarget=RenderTexture.active; RenderTexture.active=target;
+                read.ReadPixels(new Rect(0,0,1400,1200),0,0); read.Apply(); RenderTexture.active=oldTarget;
+                File.WriteAllBytes(Path.Combine(folder,"recording-orb.png"),read.EncodeToPNG());
+                controller.CancelDraft(); Object.Destroy(draftObject);
             }
             finally { Object.Destroy(obj); Object.Destroy(cameraObject); Object.Destroy(read); target.Release(); Object.Destroy(target); }
         }

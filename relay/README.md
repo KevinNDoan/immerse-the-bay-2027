@@ -20,7 +20,7 @@ Local speech uses Faster Whisper (`SPEECH_MODEL=base.en`), downloaded on first u
 - Prepare/load a world: `POST /world/prepare`; poll geometry jobs at `GET /world/jobs/{cacheKey}`
 - Crystal preview: `GET /world/preview` reads the existing panorama without starting generation
 - Geometry: `GET /world/assets/{cacheKey}/{filename}` serves converted meshes and textures
-- Revise the interactive learning object: `POST /world/study`
+- Ask, add, or revise exploration objects: `POST /world/explore` (legacy revision: `/world/study`)
 - End a world immediately: `POST /world/kill`
 
 ```sh
@@ -39,3 +39,5 @@ For a headset demo that cannot use provider credits, run the saved-world replay 
 ```
 
 It listens on localhost port 8793, loads no `.env` or provider keys, and requires the existing imported geometry and plan. Cached topic plans are reused; new topics receive the saved demonstration model. AI model revisions are unavailable in this mode. Forward USB port 8793 and set the development headset URL to `http://127.0.0.1:8793`. Keep the relay and USB connection available while testing. The normal relay on 8787 can remain running separately.
+
+To enable GPT object creation and explanations while reusing the same environment, add `--enable-openai`. This reads only `OPENAI_API_KEY` and `NODE_MODEL` from the ignored env files; it still passes empty World Labs/Reactor keys, disables image generation, and forbids environment generation/export. OpenAI text requests incur their normal usage. `--study-plan /absolute/path/to/model.json` selects an explicit cached demonstration model; it does not add topic-specific routing. The app keeps each idea’s object collection on the headset.

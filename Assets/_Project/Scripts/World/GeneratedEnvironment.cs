@@ -9,10 +9,12 @@ using UnityEngine.Rendering;
 namespace Zap.World
 {
     [Serializable] public class EnvironmentAsset { public string mesh, texture; public int vertices, triangles; }
+    [Serializable] public class EnvironmentSplats { public string file; public int count; }
     [Serializable] public class EnvironmentManifest
     {
         public string basePath, panorama;
         public EnvironmentAsset[] visual, collision;
+        public EnvironmentSplats splats;
         public Color ambient = Color.gray;
         public float metricScale = 1;
         public float groundOffset;
@@ -37,7 +39,8 @@ namespace Zap.World
         public IEnumerator Load(EnvironmentManifest manifest, string relayUrl, Action<string> status, Action<string> done, bool alignStudySurface = true)
         {
             Clear(); int generation = _generation;
-            if (manifest?.visual == null || manifest.visual.Length == 0 || manifest.visual.Length > 64 ||
+            bool useSplats = manifest?.splats != null && !string.IsNullOrEmpty(manifest.splats.file);
+            if (manifest == null || (!useSplats && (manifest.visual == null || manifest.visual.Length == 0 || manifest.visual.Length > 64)) ||
                 manifest.collision == null || manifest.collision.Length == 0 || manifest.collision.Length > 64 ||
                 !ValidBasePath(manifest.basePath) || !Finite(manifest.metricScale) || manifest.metricScale < .05f || manifest.metricScale > 20 ||
                 !Finite(manifest.groundOffset) || Mathf.Abs(manifest.groundOffset) > 20)
@@ -46,8 +49,29 @@ namespace Zap.World
             _root.SetActive(false); Ambient = manifest.ambient;
             DomeView distantBackground = null; Texture2D panoramaTexture = null;
             string prefix = relayUrl.TrimEnd('/') + manifest.basePath;
+            if (useSplats)
+            {
+                status("Loading the 3D splat surroundings…");
+                byte[] bytes = null; string failure = null;
+                yield return Download(prefix, manifest.splats.file, data => bytes = data, error => failure = error);
+                if (generation != _generation) yield break;
+                var cloud = new GameObject("Native Gaussian surroundings"); cloud.transform.SetParent(_root.transform,false);
+                if (failure == null)
+                {
+                    try { cloud.AddComponent<GaussianEnvironment>().Load(bytes); }
+                    catch (Exception e) when (e is IOException || e is ArgumentException || e is InvalidOperationException)
+                    { failure = "The splat environment could not be loaded."; }
+                }
+                if (failure != null)
+                {
+                    Destroy(cloud);
+                    if (manifest.visual == null || manifest.visual.Length == 0) { Clear(); done(failure); yield break; }
+                    Debug.LogWarning("[Splats] Using the saved mesh fallback."); useSplats=false;
+                }
+            }
             for (int kind = 0; kind < 2; kind++)
             {
+                if (kind == 0 && useSplats) continue;
                 var assets = kind == 0 ? manifest.visual : manifest.collision;
                 for (int i = 0; i < assets.Length; i++)
                 {
@@ -125,17 +149,8 @@ namespace Zap.World
             {
                 var rig = GameObject.Find("XR Origin (XR Rig)")?.transform;
                 float floor = rig != null ? rig.position.y : Camera.main.transform.position.y - 1.6f;
-                var position = _root.transform.position;
-                if (Mathf.Abs(manifest.groundOffset) > .001f) position.y = floor + manifest.groundOffset;
-                else if (SurfaceBelow(Camera.main.transform.position, 4, out var ground)) position.y += floor - ground.point.y;
-                _root.transform.position = position; Physics.SyncTransforms();
-                if (!FindStandingPoint(Camera.main.transform.position, floor, out var standing))
+                if (!AlignStartingFloor(manifest, Camera.main.transform.position, floor))
                 { Clear(); done("No clear starting floor was found in this saved world."); yield break; }
-                // Keep the user's tracked rig in place during entry; align the room's
-                // nearest clear floor with it instead of spawning inside generated furniture.
-                _root.transform.position += new Vector3(Camera.main.transform.position.x - standing.x,
-                    floor - standing.y, Camera.main.transform.position.z - standing.z);
-                Physics.SyncTransforms();
                 // Reveal a useful supporting surface in front of the viewer when one
                 // exists nearby, without rotating or moving the tracked camera.
                 if (alignStudySurface && FindStudySurface(out var support) && support.point.y > floor + .4f)
@@ -150,12 +165,57 @@ namespace Zap.World
             done(null);
         }
 
+        private bool AlignStartingFloor(EnvironmentManifest manifest, Vector3 eye, float floor)
+        {
+            Vector3 originalPosition = _root.transform.position;
+            // Metric estimates can make abstract/microscopic spaces too small for
+            // a person. Preserve normal rooms; only enlarge if no safe spawn fits.
+            // Visuals AND collision grow together, with the same floor/clearance
+            // checks at every size. Never move the tracked headset to force a fit.
+            foreach (float enlargement in new[] { 1f, 1.5f, 2f, 3f, 4f })
+            {
+                float scale = manifest.metricScale * enlargement;
+                _root.transform.localScale = Vector3.one * scale;
+                var position = originalPosition;
+                if (Mathf.Abs(manifest.groundOffset) > .001f)
+                    position.y = floor + manifest.groundOffset * enlargement;
+                _root.transform.position = position;
+                Physics.SyncTransforms();
+                if (Mathf.Abs(manifest.groundOffset) <= .001f && SurfaceBelow(eye, 4, out var ground))
+                {
+                    position.y += floor - ground.point.y;
+                    _root.transform.position = position;
+                    Physics.SyncTransforms();
+                }
+                bool correctedFloor = false;
+                if (!FindStandingPoint(eye, floor, out var standing))
+                {
+                    // The provider's ground plane is an estimate, not a constraint
+                    // on the actual floor. Probe below the generated camera origin
+                    // before changing scale. Starting there also avoids selecting
+                    // the outside of a low ceiling as a place to stand.
+                    if (!FindStandingPoint(eye, floor, out standing, false)) continue;
+                    correctedFloor = true;
+                }
+                _root.transform.position += new Vector3(eye.x - standing.x, floor - standing.y, eye.z - standing.z);
+                foreach (var background in _root.GetComponentsInChildren<DomeView>(true))
+                    background.transform.localScale = Vector3.one / scale;
+                Physics.SyncTransforms();
+                if (enlargement > 1)
+                    Debug.Log($"[Environment] Enlarged saved surroundings {enlargement:0.0}x to fit a clear standing area.");
+                if (correctedFloor)
+                    Debug.Log($"[Environment] Aligned to reconstructed floor; corrected estimated height by {floor - standing.y:0.00}m.");
+                return true;
+            }
+            return false;
+        }
+
         public static bool ValidBasePath(string path) => path != null &&
             System.Text.RegularExpressions.Regex.IsMatch(path, @"^/world/assets/[a-f0-9]{64}/$");
 
         private IEnumerator Download(string prefix, string file, Action<byte[]> done, Action<string> error)
         {
-            if (string.IsNullOrEmpty(file) || !System.Text.RegularExpressions.Regex.IsMatch(file, @"^((visual|collision)-[0-9]+\.(mesh|jpg)|panorama\.jpg)$"))
+            if (string.IsNullOrEmpty(file) || !System.Text.RegularExpressions.Regex.IsMatch(file, @"^((visual|collision)-[0-9]+\.(mesh|jpg)|panorama\.jpg|scene\.splat)$"))
             { error("Invalid environment asset path."); yield break; }
             using var request = UnityWebRequest.Get(prefix + file); _request = request; request.timeout = 120;
             yield return request.SendWebRequest();
@@ -240,10 +300,21 @@ namespace Zap.World
             return found;
         }
 
-        private bool FindStandingPoint(Vector3 eye, float floor, out Vector3 standing)
+        private bool FindStandingPoint(Vector3 eye, float floor, out Vector3 standing, bool useEstimatedFloor = true)
         {
             standing = default;
             float height = Mathf.Clamp(eye.y - floor, 1, 2);
+            float probeTop = floor + .4f, probeBottom = floor - .35f;
+            if (!useEstimatedFloor)
+            {
+                // Use actual collision bounds so an inaccurate height estimate
+                // cannot hide a supported floor above or below the narrow band.
+                probeTop = _root.transform.position.y + .1f;
+                probeBottom = probeTop;
+                foreach (var collider in _root.GetComponentsInChildren<Collider>())
+                    if (collider.enabled && !collider.isTrigger)
+                        probeBottom = Mathf.Min(probeBottom, collider.bounds.min.y - .1f);
+            }
             for (int ring = 0; ring <= 8; ring++)
             {
                 int samples = ring == 0 ? 1 : 16;
@@ -252,8 +323,9 @@ namespace Zap.World
                     float angle = (i * 360f / samples + _root.transform.eulerAngles.y) * Mathf.Deg2Rad;
                     var point = new Vector3(eye.x + Mathf.Sin(angle) * ring * .4f, floor,
                         eye.z + Mathf.Cos(angle) * ring * .4f);
-                    if (!SurfaceBelow(point + Vector3.up * .4f, .75f, out var ground) ||
-                        Mathf.Abs(ground.point.y - floor) > .35f) continue;
+                    var probe = new Vector3(point.x, probeTop, point.z);
+                    if (!SurfaceBelow(probe, probeTop - probeBottom, out var ground) ||
+                        (useEstimatedFloor && Mathf.Abs(ground.point.y - floor) > .35f)) continue;
                     point.y = ground.point.y;
                     bool clear = true;
                     foreach (var offset in new[] { Vector3.forward, Vector3.back, Vector3.right, Vector3.left })

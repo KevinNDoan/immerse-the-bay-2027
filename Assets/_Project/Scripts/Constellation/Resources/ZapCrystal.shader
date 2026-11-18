@@ -6,6 +6,7 @@ Shader "Zap/Crystal"
         _HasPreview ("Prepared", Float) = 0
         _Focus ("Held emphasis", Range(0,1)) = 0
         _Recording ("Recording", Range(0,1)) = 0
+        _ZTest ("Depth test", Float) = 4
     }
     SubShader
     {
@@ -14,6 +15,7 @@ Shader "Zap/Crystal"
         {
             Blend SrcAlpha OneMinusSrcAlpha
             ZWrite Off
+            ZTest [_ZTest]
             Cull Back
             HLSLPROGRAM
             #pragma vertex vert

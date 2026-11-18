@@ -626,7 +626,7 @@ namespace Zap.Constellation
 
         private void HandleOrbThrow(TopicBall ball)
         {
-            if (InWorld) { EnterWorld(ball); return; }
+            if (InWorld) { EnterWorld(ball, true); return; }
             if (WorldActive || PendingDeletion != null || ball == null) return;
             // Home throws arrange ideas; only an explicit entry starts generation here.
             ball.Release(Vector3.zero);
@@ -634,7 +634,7 @@ namespace Zap.Constellation
             SetStatus("Idea placed. Explore its suggestions, or point + X to open its world.");
         }
 
-        public void EnterWorld(TopicBall ball)
+        public void EnterWorld(TopicBall ball, bool thrown = false)
         {
             ClearLinkDrag();
             _trigger = false;
@@ -655,7 +655,8 @@ namespace Zap.Constellation
             _space.Save();
             foreach (var exhibit in _space.Objects) exhibit.gameObject.SetActive(false);
             _branches.gameObject.SetActive(false);
-            _journey.Begin(origin, direction, preview);
+            _journey.Begin(origin, direction, preview, thrown ? WorldJourney.ThrowShatterDistance : 0,
+                ball.LastThrowVelocity.magnitude);
             _worldNode = ball;
             _branchSelection = null;
             Save();
@@ -716,6 +717,10 @@ namespace Zap.Constellation
             }
             if (prepared.projection == "geometry")
             {
+                // Finish the orb's distance-based flight and cover before revealing
+                // any arriving geometry, including an immediately cached destination.
+                while (!_journey.HasCover && version == _worldRequest) yield return null;
+                if (version != _worldRequest) yield break;
                 string error = null;
                 // Stage into a separate component: a bad download must not destroy the current room.
                 var arriving = new GameObject("Arriving world").AddComponent<GeneratedEnvironment>();
@@ -1210,8 +1215,11 @@ namespace Zap.Constellation
         private void UpdateHud()
         {
             if (_card == null) return;
-            _card.Visible = ShowControlsCard;
-            if (!ShowControlsCard) return;
+            // In a world this is an on-demand voice/status card, not a permanent hand HUD.
+            // Answers and request progress already live on the movable learning pane.
+            bool visible = ShowControlsCard && (!WorldActive || _input.AskHeld);
+            _card.Visible = visible;
+            if (!visible) return;
             bool tutorial = _onboarding != null && _onboarding.Running && !WorldActive && !CanCancelVoice;
             string title = tutorial ? _onboarding.Title : (_worldVisible ? _worldNode?.Data.topic : (Current != null ? Current.Data.topic : "ZAP!"));
             string hint = tutorial ? TutorialHint : (_worldVisible ? WorldHint : VoidHint);

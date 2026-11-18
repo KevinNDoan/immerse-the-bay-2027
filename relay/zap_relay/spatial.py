@@ -13,10 +13,22 @@ from pathlib import Path
 from PIL import Image
 
 from .mesh_assets import convert_glb
+from .splat_assets import convert_spz
 from .nodes import _text
 from .worldlabs import WorldLabs, download_asset
 
 VERSION = "spatial-v2"
+
+
+async def parallel(*operations):
+    """Join independent work, cancelling and draining siblings on failure/shutdown."""
+    tasks = [asyncio.create_task(operation) for operation in operations]
+    try:
+        return await asyncio.gather(*tasks)
+    finally:
+        for task in tasks:
+            if not task.done(): task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 class SpatialPreparation:
@@ -47,6 +59,15 @@ class SpatialPreparation:
         folder = self._folder(key)
         if not (folder / "status.json").exists(): raise FileNotFoundError("World job not found.")
         result = json.loads((folder / "status.json").read_text())
+        splat_manifest = folder / "splat-manifest.json"
+        if self.settings.world_render_mode == "splats" and splat_manifest.exists():
+            result["state"] = "ready"
+            result["notice"] = "3D splat environment ready."
+            result["environment"] = json.loads(splat_manifest.read_text())
+            result["environment"]["basePath"] = "/world/assets/" + key + "/"
+            for field in ("plan", "pane"):
+                path = folder / (field + ".json")
+                if path.exists(): result[field] = json.loads(path.read_text())
         result["cacheKey"] = key; result["projection"] = "geometry"
         if self.demo_plan is not None and result.get("state") == "ready": result["plan"] = self.demo_plan
         return result
@@ -100,8 +121,10 @@ class SpatialPreparation:
 
     async def _prepare(self, topic, context, key):
         folder = self._folder(key)
+        plan_task = None
         def progress(text): self._save(folder, "status.json", {"state": "preparing", "notice": text})
         async def operation(name, create):
+            nonlocal plan_task
             path = folder / name
             uncertain = "A World Labs submission has an uncertain outcome. Check the saved operation with the provider before retrying; no duplicate request was sent."
             if path.exists():
@@ -124,6 +147,10 @@ class SpatialPreparation:
                     raise
                 except Exception:
                     raise RuntimeError(uncertain) from None
+            # Only start planning once generation is accepted/journalled. It can
+            # finish while the provider builds, without delaying asset preparation.
+            if name == "generation.json" and plan_task is None:
+                plan_task = asyncio.create_task(self._prepare_plan(folder, topic, context))
             return await self.api.wait(value)
         try:
             async with self.limit:
@@ -145,22 +172,35 @@ class SpatialPreparation:
                     raise RuntimeError("New World Labs generation is disabled. Choose the saved test world.")
                 if not (folder / "generation.json").exists():
                     credits = await self.api.request("GET", "/credits")
-                    # Do not start a new world that cannot finish its first HQ export.
-                    if credits.get("remaining_credits", 0) < 5080:
-                        raise RuntimeError("A new textured 3D world needs about 5,080 World Labs API credits. Add credits or revisit a ready world.")
+                    # Check the complete selected path before any paid submission.
+                    minimum = 1580 if self.settings.world_render_mode == "splats" else 5080
+                    if credits.get("remaining_credits", 0) < minimum:
+                        raise RuntimeError(f"A new 3D world needs about {minimum:,} World Labs API credits in this rendering mode. Add credits or revisit a ready world.")
                 progress("Generating the 3D environment. This can take several minutes; Y returns while it builds.")
                 result = await operation("generation.json", lambda: self.api.generate(topic, context))
                 world_id = result.get("world_id") or result.get("world", {}).get("world_id")
                 world = await self.api.world(world_id); self._save(folder, "world.json", world)
                 assets = world.get("assets") or {}
-                for name, url in (("collider.glb", (assets.get("mesh") or {}).get("collider_mesh_url")),
-                                  ("pano.png", (assets.get("imagery") or {}).get("pano_url"))):
-                    if not url: raise RuntimeError("World Labs did not provide the required environment assets.")
-                    if not (folder / name).exists(): await download_asset(url, folder / name)
-                await self._prepare_plan(folder, topic, context)
+                downloads = [("collider.glb", (assets.get("mesh") or {}).get("collider_mesh_url")),
+                             ("pano.png", (assets.get("imagery") or {}).get("pano_url"))]
+                if self.settings.world_render_mode == "splats":
+                    quality = self.settings.world_splat_quality
+                    downloads.append(("scene-" + quality + ".spz", ((assets.get("splats") or {}).get("spz_urls") or {}).get(quality)))
+                if any(not url for _, url in downloads):
+                    raise RuntimeError("World Labs did not provide the required environment assets.")
+                await parallel(*(download_asset(url, folder / name) for name, url in downloads if not (folder / name).exists()))
+                if self.settings.world_render_mode == "splats":
+                    progress("Preparing the native 3D splats and walkable surfaces…")
+                    manifest = await self.import_splats(folder, key, publish=False)
+                    await plan_task
+                    # The manifest is the ready marker: publish only once the
+                    # initial learning object (or fallback pane) is also saved.
+                    self._save(folder, "splat-manifest.json", manifest)
+                    return
                 progress("Building the textured 3D surfaces. The provider can take up to an hour; Y returns while it builds.")
                 result = await operation("export.json", lambda: self.api.export(world_id))
                 if not (folder / "world.glb").exists(): await download_asset(result["url"], folder / "world.glb")
+                await plan_task
                 await self.import_assets(folder, key)
         except asyncio.CancelledError: raise
         except Exception as exc:
@@ -169,6 +209,40 @@ class SpatialPreparation:
             detail = detail.replace(self.settings.worldlabs_key, "[redacted]") if self.settings.worldlabs_key else detail
             if "http" in detail: detail = "3D preparation failed. Re-enter to resume the saved job."
             self._save(folder, "status.json", {"state": "error", "notice": detail[:400]})
+        finally:
+            if plan_task is not None:
+                if not plan_task.done(): plan_task.cancel()
+                await asyncio.gather(plan_task, return_exceptions=True)
+
+    async def import_splats(self, folder, key, publish=True):
+        """Import an existing world's mobile cloud. GET/downloads only, never export."""
+        world = json.loads((folder / "world.json").read_text())
+        splats = (world.get("assets") or {}).get("splats") or {}
+        urls = splats.get("spz_urls") or {}
+        quality = self.settings.world_splat_quality
+        source = folder / ("scene-" + quality + ".spz")
+        if not source.exists():
+            url = urls.get(quality)
+            if not url: raise RuntimeError("This world has no mobile splat asset. No textured export was started.")
+            await download_asset(url, source)
+        converted = folder / "assets"
+        cloud = await asyncio.to_thread(convert_spz, source, converted)
+        collision = await asyncio.to_thread(convert_glb, folder / "collider.glb", converted, "collision", True)
+        with Image.open(folder / "pano.png") as image:
+            image.thumbnail((2048,1024)); image.convert("RGB").save(converted / "panorama.jpg", quality=90)
+            average = image.resize((1,1)).convert("RGB").getpixel((0,0))
+        semantics = splats.get("semantics_metadata") or {}
+        scale = float(semantics.get("metric_scale_factor", 1))
+        ground = float(semantics.get("ground_plane_offset", 0))
+        if not .05 <= scale <= 20 or not -20 <= ground <= 20: raise ValueError("Invalid world metric scale.")
+        fallback = json.loads((folder / "manifest.json").read_text()).get("visual",[]) if (folder / "manifest.json").exists() else []
+        manifest = {"splats": cloud, "visual": fallback, "collision": collision, "panorama":"panorama.jpg",
+                    "metricScale":scale,"groundOffset":ground,
+                    "ambient":dict(zip(("r","g","b","a"), [v/255 for v in average]+[1]))}
+        if not publish: return manifest
+        self._save(folder,"splat-manifest.json",manifest)
+        if not (folder / "status.json").exists(): self._save(folder,"status.json",{"state":"ready"})
+        return self.status(key)
 
     async def import_assets(self, folder, key, texture_projection="atlas"):
         """Also used to import an explicitly requested verification job without regenerating it."""
@@ -204,7 +278,7 @@ class SpatialPreparation:
 
     def asset(self, key, filename):
         if self.collection is not None and not self.settings.world_generation_enabled and not self.collection.contains_key(key): raise FileNotFoundError("World is not in this demo.")
-        if not re.fullmatch(r"(?:visual|collision)-[0-9]+\.(?:mesh|jpg)|panorama\.jpg", filename):
+        if not re.fullmatch(r"(?:visual|collision)-[0-9]+\.(?:mesh|jpg)|panorama\.jpg|scene\.splat", filename):
             raise ValueError("Invalid world asset.")
         path = self._folder(key) / "assets" / filename
         if not path.is_file(): raise FileNotFoundError("World asset not found.")

@@ -418,6 +418,130 @@ namespace Zap.World.Tests
         }
 
         [UnityTest]
+        public IEnumerator ControlsCardMovesResizesAndHidesWithAPointer()
+        {
+            var parent = new GameObject("Test controls card parent");
+            try
+            {
+                var card = ControlsCard.Create(parent.transform, true);
+                yield return null;
+                card.Show("Volcanoes", null, "Ready", "Hint", false, 0f, false);
+                var hand = new Vector3(.1f, 1.2f, 0f);
+                Ray Aim(Vector3 target) => new Ray(hand, (target - hand).normalized);
+
+                // A trigger pressed away from the card keeps its own job, even when it sweeps across the card.
+                var start = card.transform.position;
+                Assert.IsFalse(card.Point(1, true, Aim(start + Vector3.right * 3f), true));
+                Assert.IsFalse(card.Point(1, true, Aim(start), true));
+                Assert.IsFalse(card.IsDragging);
+                card.Point(1, true, Aim(start), false);
+                Assert.Less(Vector3.Distance(start, card.transform.position), 1e-4f);
+
+                // Pressing on the card and moving the ray carries the card with it.
+                Assert.IsTrue(card.Point(1, true, Aim(start), false));
+                Assert.IsTrue(card.Point(1, true, Aim(start), true));
+                Assert.AreEqual(1, card.DragHand);
+                float reach = Vector3.Distance(hand, start);
+                var moved = Aim(start + new Vector3(.5f, .2f, 0f));
+                Assert.IsTrue(card.Point(1, true, moved, true));
+                Assert.Less(Vector3.Distance(moved.origin + moved.direction * reach, card.transform.position), 1e-3f);
+                Assert.IsTrue(card.Placed);
+                card.Point(1, true, moved, false);
+                Assert.IsFalse(card.IsDragging);
+
+                // The card keeps the place it was given.
+                var placed = card.transform.position;
+                card.Show("Volcanoes", null, "Ready", "Hint", false, 0f, false);
+                Assert.Less(Vector3.Distance(placed, card.transform.position), 1e-4f);
+
+                // Dragging a corner away from the centre grows the card about its centre.
+                var corner = card.CornerPosition(1, -1);
+                Assert.IsTrue(card.Point(1, true, Aim(corner), true));
+                var farther = card.transform.position + (corner - card.transform.position) * 1.5f;
+                card.Point(1, true, Aim(farther), true);
+                card.Point(1, true, Aim(farther), false);
+                Assert.AreEqual(1.5f, card.Scale, .05f);
+                Assert.Less(Vector3.Distance(placed, card.transform.position), 1e-4f);
+
+                // The button tucks the card away to its title bar and brings it back.
+                float openHeight = card.Size.y;
+                card.Point(1, true, Aim(card.ButtonPosition), true);
+                card.Point(1, true, Aim(card.ButtonPosition), false);
+                Assert.IsTrue(card.Collapsed);
+                Assert.Less(card.Size.y, openHeight);
+                card.Point(1, true, Aim(card.ButtonPosition), true);
+                card.Point(1, true, Aim(card.ButtonPosition), false);
+                Assert.IsFalse(card.Collapsed);
+                Assert.AreEqual(openHeight, card.Size.y, 1e-4f);
+
+                // Hiding tucks the card up to its top edge, so the button stays under the pointer.
+                var top = card.CornerPosition(1, 1);
+                card.SetCollapsed(true);
+                Assert.Less(Vector3.Distance(top, card.CornerPosition(1, 1)), 1e-4f);
+                card.SetCollapsed(false);
+                Assert.Less(Vector3.Distance(placed, card.transform.position), 1e-4f);
+
+                // Something nearer along the ray (a star, an object) keeps the trigger for itself.
+                var centre = card.transform.position;
+                Assert.IsFalse(card.Point(1, true, Aim(centre), false, 0f, Vector3.Distance(hand, centre) - .2f));
+                Assert.IsTrue(card.Point(1, true, Aim(centre), false));
+
+                // A card hidden in the middle of a drag lets go, but keeps that trigger until it is released,
+                // so the held trigger does not start a link or a cut.
+                card.Point(1, true, Aim(centre), true);
+                Assert.IsTrue(card.IsDragging);
+                card.Visible = false;
+                Assert.IsFalse(card.IsDragging);
+                Assert.IsTrue(card.Point(1, true, Aim(centre), true));
+                card.Visible = true;
+                Assert.IsTrue(card.Point(1, true, Aim(centre + Vector3.right * 3f), true));
+                Assert.IsFalse(card.IsDragging);
+                Assert.IsFalse(card.Point(1, true, Aim(centre + Vector3.right * 3f), false));
+
+                // A trigger already held while the card was hidden does not grab the card when it comes back.
+                card.Visible = false;
+                card.Point(1, true, Aim(centre), true);
+                card.Visible = true;
+                Assert.IsFalse(card.Point(1, true, Aim(centre), true));
+                Assert.IsFalse(card.IsDragging);
+            }
+            finally
+            {
+                Object.Destroy(parent);
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator ControlsCardStaysPutInThePlaySpace()
+        {
+            var parent = new GameObject("Test controls card parent");
+            var rig = new GameObject("XR Origin (XR Rig)");
+            try
+            {
+                var card = ControlsCard.Create(parent.transform, true);
+                yield return null;
+                card.Show("Volcanoes", null, "Ready", "Hint", false, 0f, false);
+                var before = rig.transform.InverseTransformPoint(card.transform.position);
+
+                // A world walks and turns the rig; the card keeps its place around the person.
+                rig.transform.SetPositionAndRotation(new Vector3(2f, 0f, -3f), Quaternion.Euler(0f, 90f, 0f));
+                card.Show("Volcanoes", null, "Ready", "Hint", false, 0f, false);
+                Assert.Less(Vector3.Distance(before, rig.transform.InverseTransformPoint(card.transform.position)), 1e-4f);
+                Assert.Less(Quaternion.Angle(rig.transform.rotation, card.transform.rotation), .01f);
+
+                // Leaving the world puts the rig back, and the card with it.
+                rig.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+                card.Show("Volcanoes", null, "Ready", "Hint", false, 0f, false);
+                Assert.Less(Vector3.Distance(before, card.transform.position), 1e-4f);
+            }
+            finally
+            {
+                Object.Destroy(parent);
+                Object.Destroy(rig);
+            }
+        }
+
+        [UnityTest]
         public IEnumerator ReleasedTopicStaysPutAndTossedTopicIsRemoved()
         {
             var placedObject = new GameObject("Placed topic");

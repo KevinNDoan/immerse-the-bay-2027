@@ -21,6 +21,20 @@ MonoBehaviour:
   ink: {r: 0.043137256, g: 0.03137255, b: 0.078431375, a: 1}
   skybox: {fileID: 2100000, guid: 24bef11ac8a6be44f8f79c5e1dda37df, type: 2}
   skyAmbient: {r: 0.8, g: 0.81, b: 0.84, a: 1}
+  skyPanorama: {fileID: 2800000, guid: 96a66f1a0b8c841428e414e96a3f36ca, type: 3}
+  useFrostedGlass: 1
+  glassTint: {r: 1, g: 1, b: 1, a: 0.3}
+  glassCornerRadius: 0.009
+  glassGlowWidth: 0.008
+  glassGlowStrength: 0.55
+  glassEdgeStrength: 0.6
+  glassFrost: 1
+  glassSkyBlur: 6
+  glassOpacity: 0.92
+  glassPadding: 0.012
+  glassTextColor: {r: 0.043137256, g: 0.03137255, b: 0.078431375, a: 1}
+  glassDimTextColor: {r: 0.043137256, g: 0.03137255, b: 0.078431375, a: 0.65}
+  glassAlertColor: {r: 0.878, g: 0.318, b: 0.494, a: 1}
   nodeDiameter: 0.11
   nodeSelectedDiameter: 0.125
   noteOffsetBelowNode: 0.09

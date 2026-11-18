@@ -176,7 +176,8 @@ namespace Zap.Constellation
         {
             if (_voice == null || _world == null) return;
             // The start-up intro covers the whole view. Nothing is listened to or changed until it has gone.
-            if (IntroSplash.Playing) return;
+            // Input is still read so a button held through the intro does not count as a new press afterwards.
+            if (IntroSplash.Playing) { _input.Poll(); return; }
             FindControllers();
             _input.Poll();
             UpdateCardPointers();

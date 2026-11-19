@@ -62,6 +62,11 @@ namespace Zap.EditorTools
             changed |= Assign(ref theme.noteBackgroundPointed, ZapArtImporter.UiFolder + "note_compact_pointed.png", onlyEmpty);
             changed |= Assign(ref theme.noteBackgroundHeld, ZapArtImporter.UiFolder + "note_compact_held.png", onlyEmpty);
             changed |= Assign(ref theme.noteExpanded, ZapArtImporter.UiFolder + "note_expanded.png", onlyEmpty);
+            if (!onlyEmpty || theme.linkSound == null)
+            {
+                var zap = AssetDatabase.LoadAssetAtPath<AudioClip>(AudioFolder + "zap_connect.wav");
+                if (zap != null && zap != theme.linkSound) { theme.linkSound = zap; changed = true; }
+            }
             if (changed)
             {
                 EditorUtility.SetDirty(theme);
@@ -71,6 +76,7 @@ namespace Zap.EditorTools
         }
 
         public const string FontFolder = "Assets/_Project/Art/Fonts/";
+        public const string AudioFolder = "Assets/_Project/Audio/";
         private static readonly string[] FontWeights = { "Regular", "SemiBold" };
 
         [MenuItem("ZAP/Build Font Assets")]

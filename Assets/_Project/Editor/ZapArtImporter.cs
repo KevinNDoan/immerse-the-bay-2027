@@ -56,7 +56,7 @@ namespace Zap.EditorTools
 
         private static void OnPostprocessAllAssets(string[] imported, string[] deleted, string[] moved, string[] movedFrom)
         {
-            if (imported.Any(IsArt))
+            if (imported.Any(p => IsArt(p) || p.StartsWith(ZapThemeAssetBuilder.AudioFolder, StringComparison.Ordinal)))
                 EditorApplication.delayCall += () => ZapThemeAssetBuilder.FillImages(true);
             // Only the .ttf files trigger this, so the font assets it creates do not loop back here.
             if (imported.Any(p => p.StartsWith(ZapThemeAssetBuilder.FontFolder, StringComparison.Ordinal)

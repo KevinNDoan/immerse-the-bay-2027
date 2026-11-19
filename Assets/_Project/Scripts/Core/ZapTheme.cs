@@ -29,6 +29,11 @@ namespace Zap.Core
         [Tooltip("The sky as one 2:1 panorama; frosted glass shows a blurred copy of it.")]
         public Texture2D skyPanorama;
 
+        [Header("Sounds (filled by ZAP > Fill Theme Images)")]
+        [Tooltip("Plays where two nodes get connected. Empty = silent.")]
+        public AudioClip linkSound;
+        [Range(0f, 1f)] public float linkSoundVolume = .6f;
+
         [Header("Frosted glass UI (cards, notes, labels, panes)")]
         [Tooltip("Off brings back the old dark panels and white text.")]
         public bool useFrostedGlass = true;

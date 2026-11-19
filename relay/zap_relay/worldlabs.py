@@ -75,7 +75,7 @@ class WorldLabs:
             if time.monotonic() > deadline:
                 raise RuntimeError("World Labs is still preparing this world. Re-enter to resume waiting.")
             if progress: progress(operation)
-            await asyncio.sleep(10)
+            await asyncio.sleep(2)
             operation = await self.operation(operation["operation_id"])
 
 

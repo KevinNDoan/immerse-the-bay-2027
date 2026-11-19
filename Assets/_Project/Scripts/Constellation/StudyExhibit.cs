@@ -10,6 +10,7 @@ namespace Zap.Constellation
     // Floating, inspectable representations share the same controls for every topic.
     public sealed class StudyExhibit : MonoBehaviour
     {
+        public string ObjectId { get; internal set; } = Guid.NewGuid().ToString("N");
         public StudyModelData Data { get; private set; }
         public bool IsHeld => _grab != null && _grab.isSelected;
         public bool IsFocused => !float.IsPositiveInfinity(FocusDistance);

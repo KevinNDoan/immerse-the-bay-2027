@@ -8,7 +8,7 @@ using Zap.Core;
 
 namespace Zap.Constellation
 {
-    [RequireComponent(typeof(Rigidbody), typeof(SphereCollider), typeof(TravelGrabInteractable))]
+    [RequireComponent(typeof(Rigidbody), typeof(SphereCollider))]
     public sealed class TopicBall : MonoBehaviour
     {
         public const float TossSpeed = 2.5f;
@@ -43,6 +43,7 @@ namespace Zap.Constellation
         private float _scale = .15f;
         private string _previewImage;
         private float _tossedAt;
+        private float _nextImpactSoundAt;
         private Vector3 _tossStartScale, _tossStarStartScale;
 
         public void Initialize(NodeData data, Material material)
@@ -56,8 +57,12 @@ namespace Zap.Constellation
             Body.interpolation = RigidbodyInterpolation.Interpolate;
             Body.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
             GetComponent<SphereCollider>().radius = .085f;
-            Grab = GetComponent<TravelGrabInteractable>();
-            ((TravelGrabInteractable)Grab).Detached += CaptureRelease;
+            // Construct this runtime-only component explicitly rather than relying on
+            // dependency attributes to install it in IL2CPP player builds.
+            var travelGrab = GetComponent<TravelGrabInteractable>();
+            if (travelGrab == null) travelGrab = gameObject.AddComponent<TravelGrabInteractable>();
+            Grab = travelGrab;
+            travelGrab.Detached += CaptureRelease;
             Grab.movementType = XRBaseInteractable.MovementType.VelocityTracking;
             Grab.throwOnDetach = true;
             Grab.forceGravityOnDetach = false;
@@ -177,6 +182,8 @@ namespace Zap.Constellation
         private void CaptureRelease(Vector3 velocity)
         {
             // Capture XRI's actual detach velocity before room collisions or locomotion can change it.
+            if (_releasePending && isActiveAndEnabled && !_draft && !IsTossed && !Grab.isSelected)
+                OrbAudio.PlayThrow(transform.position, velocity.magnitude);
             _travelPending = _releasePending && IsTravelThrow(velocity, _releaseFromHead, _releaseGaze, _releasedAfter);
             _releaseVelocity = velocity;
             _releasePending = false;
@@ -191,6 +198,20 @@ namespace Zap.Constellation
         }
 
         private void OnDisable() { _releasePending = _travelPending = false; }
+
+        private void OnCollisionEnter(Collision collision)
+        {
+            if (!isActiveAndEnabled || _draft || IsTossed || collision.contactCount == 0
+                || Time.unscaledTime < _nextImpactSoundAt) return;
+            float speed = collision.relativeVelocity.magnitude;
+            if (speed < OrbAudio.MinimumImpactSpeed) return;
+            // Both orbs receive this contact; share the cooldown so the first callback plays it once.
+            var other = collision.collider.GetComponentInParent<TopicBall>();
+            if (other != null && Time.unscaledTime < other._nextImpactSoundAt) return;
+            _nextImpactSoundAt = Time.unscaledTime + .15f;
+            if (other != null) other._nextImpactSoundAt = _nextImpactSoundAt;
+            OrbAudio.PlayImpact(collision.GetContact(0).point, speed);
+        }
 
         public static bool IsToss(Vector3 releaseVelocity)
         {
@@ -225,13 +246,14 @@ namespace Zap.Constellation
 
         private void FixedUpdate()
         {
-            if (Body == null || Grab.isSelected || Body.isKinematic) return;
+            if (Body == null || Grab == null || Grab.isSelected || Body.isKinematic) return;
             Body.linearVelocity = Vector3.ClampMagnitude(Body.linearVelocity, 8);
             if (Body.linearVelocity.sqrMagnitude < .0009f) Body.linearVelocity = Vector3.zero;
         }
 
         private void LateUpdate()
         {
+            if (Grab == null || Crystal == null || _note == null) return;
             // Dispatch outside XRI's detach callback: travel may deactivate/reparent this ball.
             if (_travelPending)
             {

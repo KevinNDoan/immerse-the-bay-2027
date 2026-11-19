@@ -16,6 +16,29 @@ namespace Zap.World.Tests
     public class CrystalJourneyTests
     {
         [Test]
+        public void HyperspaceKeepsItsInitialSpeedThroughoutLongWaits()
+        {
+            var root = new GameObject("Journey speed test");
+            try
+            {
+                var journey = root.AddComponent<WorldJourney>();
+                journey.Begin(Vector3.zero, Vector3.forward);
+                var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+                var render = typeof(WorldJourney).GetMethod("RenderAt", flags);
+                var material = (Material)typeof(WorldJourney).GetField("_tunnelMaterial", flags).GetValue(journey);
+                foreach (float age in new[] { 2f, 4.5f, 5f, 6f, 30f, 300f })
+                {
+                    render.Invoke(journey, new object[] { age, 0f });
+                    float start = material.GetFloat("_Travel");
+                    render.Invoke(journey, new object[] { age + 1, 0f });
+                    Assert.AreEqual(1f, material.GetFloat("_Travel") - start, .0001f,
+                        "Travel speed changed during the provider wait at " + age);
+                }
+            }
+            finally { Object.DestroyImmediate(root); }
+        }
+
+        [Test]
         public void TravelGestureRejectsPlacementAndThrowsTowardTheFace()
         {
             Assert.IsFalse(TopicBall.IsTravelThrow(Vector3.forward*.4f,Vector3.forward*.5f,Vector3.forward,.5f));

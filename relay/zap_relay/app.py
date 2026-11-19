@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse
 
 from .config import Settings, load_settings
 from .nodes import SpeechService, NodeService, MAX_AUDIO_BYTES, _text
+from .object_actions import validate_inventory
 from .spatial import SpatialPreparation
 from .world import World, register_world_routes
 from .worlds import WorldPreparation, validate_plan
@@ -80,9 +81,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             payload = json.loads(await _bounded_body(request, 64000))
             if not isinstance(payload, dict):
                 raise ValueError("Expected a JSON object.")
-            current = payload.get("current")
-            if current is not None:
-                current = validate_plan(current)
+            current = _optional_study_model(payload.get("current"))
             preview = await asyncio.to_thread(spatial.preview) if spatial.enabled else {}
             return await preparation.plan(_text(payload.get("topic"), 160),
                 _text(payload.get("context"), 8000), _text(payload.get("instruction"), 2000), current,
@@ -105,15 +104,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             payload = json.loads(await _bounded_body(request, 160000))
             if not isinstance(payload, dict): raise ValueError("Expected a JSON object.")
-            current = payload.get("current")
-            if current is not None: current = validate_plan(current)
+            current = _optional_study_model(payload.get("current"))
             objects = payload.get("objects", [])
             if not isinstance(objects, list) or len(objects) > 6: raise ValueError("Invalid object collection.")
             from .study_models import number
             state = {"step": int(number(payload.get("step", -1), -1, 4)), "parameter": number(payload.get("parameter", 0), 0, 1)}
+            options = {}
+            if payload.get("objectActions") is True:
+                inventory, selected_id = validate_inventory(payload.get("objectStates"), payload.get("selectedId", ""))
+                options = {"scene_objects": inventory, "selected_id": selected_id}
+                current = next((item["model"] for item in inventory if item["id"] == selected_id), None)
             result = await preparation.explore(_text(payload.get("topic"), 160), _text(payload.get("context"), 8000),
                 _text(payload.get("instruction"), 2000), current, _text(payload.get("focused", ""), 150, required=False),
-                [_text(title, 120) for title in objects], state)
+                [_text(title, 120) for title in objects], state, **options)
             if result["action"] == "add" and len(objects) >= 6:
                 return {"action": "answer", "answer": "This space has six objects. You can keep exploring or ask me to change the selected object.", "model": None}
             return result
@@ -151,6 +154,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     register_world_routes(app, world)
     return app
+
+
+def _optional_study_model(current):
+    # JsonUtility serializes a null inline StudyModelData as an empty object.
+    # Pane-only worlds have no selected model; keep validating any actual model.
+    if current is None or (isinstance(current, dict)
+            and current.get("title") in (None, "")
+            and current.get("parts") in (None, [])):
+        return None
+    return validate_plan(current)
 
 
 async def _bounded_body(request: Request, limit: int) -> bytes:

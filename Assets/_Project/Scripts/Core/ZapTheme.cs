@@ -80,6 +80,16 @@ namespace Zap.Core
         public float suggestedTextSize = .2f;
         public Color suggestedTextColor = new Color(1f, 1f, 1f, .7f);
 
+        [Header("Start-up intro")]
+        [Tooltip("How far ahead of the person the intro animation plays, in metres.")]
+        public float introDistance = 2f;
+        [Tooltip("Width of the intro animation, in metres.")]
+        public float introWidth = 2.4f;
+        [Tooltip("Colour that fills the view around the intro animation. Match the animation's own background.")]
+        public Color introBackdrop = new Color(.914f, .941f, .953f, 1f);
+        [Tooltip("How long the intro takes to fade into the workspace, in seconds.")]
+        public float introFadeSeconds = .6f;
+
         [Header("Controls card")]
         [Tooltip("How far ahead of the person the card sits, in metres.")]
         public float controlsDistance = 1.2f;
@@ -101,6 +111,14 @@ namespace Zap.Core
         public float cardStatusSize = .32f;
         [Tooltip("Hint text size on the card.")]
         public float cardHintSize = .24f;
+        [Tooltip("Smallest size the person can shrink the card to, as a multiple of its normal size.")]
+        public float cardMinScale = .5f;
+        [Tooltip("Largest size the person can grow the card to, as a multiple of its normal size.")]
+        public float cardMaxScale = 2.5f;
+        [Tooltip("How close to a corner the pointer must be to resize the card, in metres.")]
+        public float cardCornerReach = .045f;
+        [Tooltip("Size of the hide and show button on the card, in metres.")]
+        public float cardButtonSize = .05f;
         [Tooltip("Controller hint text size.")]
         public float hintTextSize = .12f;
         [Tooltip("Controller hint line width, in metres.")]

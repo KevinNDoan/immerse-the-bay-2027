@@ -49,7 +49,7 @@ The judges' page is at `http://localhost:8787/`. Merely opening it does not crea
 | Return | Left Y when no voice request is pending |
 | Travel to a linked idea | Parent and child orbs appear to the left inside a world. Select one and press X, or grip and throw it |
 | Move/look inside a world | Left stick accelerates into walking and slides along walls; right stick snap-turns when not pointing at an object |
-| Ask, add or revise an object | Hold left trigger, speak, release. A question produces an explanation; a request for another object adds it; explicit revisions change the selected object |
+| Ask, add, edit or remove objects | Hold left trigger, speak, release. Questions produce explanations; requests can create, revise, replace or remove named objects, including combined changes |
 | Edit the current world's saved topic | Hold B; if a child ball is selected, B edits that child instead |
 | Inspect an object | Grip moves/rotates; two grips resize; while pointing/holding, right stick up/down zooms and left/right adjusts its experiment |
 | Move a reading pane | Grip the glass pane itself, move/rotate it, then release. It stays independently of the object and its placement is saved |
@@ -58,7 +58,9 @@ The judges' page is at `http://localhost:8787/`. Merely opening it does not crea
 | Add/remove a parent connection | Point at the parent, hold right trigger, point at the child, release; repeat to remove |
 | Pull/stretch the constellation | Hold both grips in empty space and move/spread your hands |
 
-Grant microphone access the first time prompted, then hold the button again. A recording lasts at most 20 seconds. The world pane shows listening, transcription, thinking, answers and retry details; the left-hand display holds controls and short status messages, without repeating the explanation. The question targets the object selected when recording begins. Hovering another object does not hide the answer; grabbing or deliberately using an object's controls changes the reading pane.
+Grant microphone access the first time prompted, then hold the button again. A recording lasts at most 20 seconds. The world pane shows listening, transcription, thinking, answers and retry details; the left-hand display holds controls and short status messages, without repeating the explanation. References such as "this object" use the selection when recording begins; explicit names can target another object in the space. Hovering another object does not hide the answer; grabbing or deliberately using an object's controls changes the reading pane.
+
+Polite requests such as "can you create RNA and delete the DNA?" perform the requested changes. Combined changes are prepared and validated before existing objects are removed. At most six learning objects can remain; replacing an object also works when the space is full. Edits preserve placement, and removals persist on revisiting. Removing the final object leaves a reading pane for further questions or creation requests. These actions affect the floating learning objects; the baked environment mesh is not individually editable through this path.
 
 The orb appears at button-down, pulses while A is held, and stays at the hand while transcription and writing finish. Y cancels an unfinished request before leaving the world: microphone capture stops, the temporary orb disappears, and late responses cannot create a node or overwrite another request. Empty or failed recordings likewise remove the unfinished orb without saving a node. Cancellation discards the pending result; it does not delete a previously completed idea. Released balls slow down and float without gravity.
 

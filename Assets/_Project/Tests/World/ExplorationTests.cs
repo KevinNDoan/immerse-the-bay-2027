@@ -236,7 +236,7 @@ namespace Zap.World.Tests
             {
                 controller.BeginDraft();
                 var apply=typeof(ConstellationController).GetMethod("ApplyText",flags);
-                var old=(IEnumerator)apply.Invoke(controller,new object[]{"an idea","create",null,-1,null,null});
+                var old=(IEnumerator)apply.Invoke(controller,new object[]{"an idea","create",null,-1,null,null,null});
                 Assert.IsTrue(old.MoveNext());
                 // Stop at the transport boundary. Deliver a completed response after cancellation
                 // without contacting any provider or relying on a particular network delay.
@@ -245,7 +245,7 @@ namespace Zap.World.Tests
                 Assert.IsTrue(controller.Busy); Assert.IsTrue(controller.CancelPendingVoice());
                 Assert.IsFalse(controller.Busy); Assert.AreEqual(0,controller.Balls.Count);
                 var nextDraft=controller.BeginDraft();
-                var next=(IEnumerator)apply.Invoke(controller,new object[]{"a different idea","create",null,-1,null,null});
+                var next=(IEnumerator)apply.Invoke(controller,new object[]{"a different idea","create",null,-1,null,null,null});
                 Assert.IsTrue(next.MoveNext()); Assert.IsTrue(controller.Busy);
                 deliver("{\"topic\":\"Late result\",\"summary\":\"Must be ignored\",\"worldPrompt\":\"No world\",\"suggestions\":[]}");
                 Assert.IsFalse(old.MoveNext());
